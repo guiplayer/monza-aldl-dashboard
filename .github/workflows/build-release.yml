@@ -1,0 +1,6 @@
+- name: Compilar firmware
+  run: |
+    arduino-cli compile \
+      --fqbn esp32:esp32:esp32 \
+      --output-dir build \
+      sketch/monza-aldl-dashboard
