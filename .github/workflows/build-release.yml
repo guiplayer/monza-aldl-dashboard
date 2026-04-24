@@ -30,14 +30,14 @@ jobs:
 
       - name: Instalar bibliotecas
         run: |
+          arduino-cli lib install "ArduinoJson"
+          arduino-cli lib install "AnimatedGIF"
           arduino-cli lib install "Adafruit GFX Library"
           arduino-cli lib install "Adafruit ST7735 and ST7789 Library"
           arduino-cli lib install "Adafruit BME280 Library"
+          arduino-cli lib install "Adafruit MPU6050"
           arduino-cli lib install "Adafruit Unified Sensor"
           arduino-cli lib install "RTClib"
-          arduino-cli lib install "ArduinoJson"
-          arduino-cli lib install "AnimatedGIF"
-          arduino-cli lib install "MPU6050"
 
       - name: Compilar firmware
         run: |
