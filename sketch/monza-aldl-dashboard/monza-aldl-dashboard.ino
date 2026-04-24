@@ -75,11 +75,10 @@
 #define TELA_IAT              33
 #define TELA_VOLT             34
 #define TELA_RPM              35
-#define TELA_BAROMETRICO      36
-#define TELA_TEMPO_INJECAO    37
-#define TELA_CO2              38
-#define TELA_CODIGOS_ECU      39
-#define TELA_LIMPAR_ECU       40
+#define TELA_TEMPO_INJECAO    36
+#define TELA_CO2              37
+#define TELA_CODIGOS_ECU      38
+#define TELA_LIMPAR_ECU       39
 
 // =======================
 // OBJETOS
@@ -117,12 +116,12 @@ struct Menu {
 };
 
 const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Configuracao"};
-const char* submenuSensores[] = {"TPS","MAP","CTS (temp motor)","IAT (temp admissao)","Voltimetro","RPM","Barometrico","Tempo de injecao","CO2 POT","Voltar"};
+const char* submenuSensores[] = {"TPS","MAP","CTS (temp motor)","IAT (temp admissao)","Voltimetro","RPM","Tempo de injecao","CO2 POT","Voltar"};
 const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
 const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Update via OTA","Voltar"};
 
 Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 4, nullptr };
-Menu menuSensores = { "Sensores", submenuSensores, 10, &menuPrincipal };
+Menu menuSensores = { "Sensores", submenuSensores, 9, &menuPrincipal };
 Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 9, &menuPrincipal };
 Menu menuConfig = { "Configuracao", submenuConfig, 8, &menuPrincipal };
 
@@ -176,7 +175,6 @@ float voltagem = 0;
 float voltCO2 = 0;
 float tempoInjecao = 0;
 float tempAdmissao = 0;
-float valorBarometrico = 0;
 int velocidade = 0;
 int errosChecksum = 0;
 unsigned long ultimaMensagemALDL = 0;
@@ -296,7 +294,6 @@ void telaSensorCTS();
 void telaSensorIAT();
 void telaSensorVoltimetro();
 void telaSensorRPM();
-void telaBarometrico();
 void telaSensorTempoInjecao();
 
 // =======================
@@ -450,7 +447,6 @@ void lerEncoder() {
       telaAtiva != TELA_IAT &&
       telaAtiva != TELA_VOLT &&
       telaAtiva != TELA_RPM &&
-      telaAtiva != TELA_BAROMETRICO &&
       telaAtiva != TELA_TEMPO_INJECAO &&
       telaAtiva != TELA_OTA &&
       telaAtiva != TELA_CO2 &&
@@ -508,9 +504,8 @@ void selecionarItemMenu() {
     else if (menuIndex == 3) { telaAtiva = TELA_IAT; estadoUI = TELA_UI; }
     else if (menuIndex == 4) { telaAtiva = TELA_VOLT; estadoUI = TELA_UI; }
     else if (menuIndex == 5) { telaAtiva = TELA_RPM; estadoUI = TELA_UI; }
-    else if (menuIndex == 6) { telaAtiva = TELA_BAROMETRICO; estadoUI = TELA_UI; }
-    else if (menuIndex == 7) { telaAtiva = TELA_TEMPO_INJECAO; estadoUI = TELA_UI; }
-    else if (menuIndex == 8) { telaAtiva = TELA_CO2; estadoUI = TELA_UI; }
+    else if (menuIndex == 6) { telaAtiva = TELA_TEMPO_INJECAO; estadoUI = TELA_UI; }
+    else if (menuIndex == 7) { telaAtiva = TELA_CO2; estadoUI = TELA_UI; }
   }
 
   else if (menuAtual == &menuDiagnostico) {
@@ -572,7 +567,6 @@ void atualizarTela() {
     case TELA_IAT:            telaSensorIAT(); break;
     case TELA_VOLT:           telaSensorVoltimetro(); break;
     case TELA_RPM:            telaSensorRPM(); break;
-    case TELA_BAROMETRICO:         telaBarometrico(); break;
     case TELA_TEMPO_INJECAO:  telaSensorTempoInjecao(); break;
     case TELA_CO2:           telaSensorCO2(); break;
     case TELA_CODIGOS_ECU:    telaCodigosECU(); break;
@@ -645,24 +639,26 @@ void telaSensorMAP() {
     iniciado = true;
   }
 
-  if (ultimoValor != valorMAP) {
+  float valorTela = round(valorMAP * 100.0f) / 100.0f;
+
+  if (ultimoValor != valorTela) {
     tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
 
     tft.setTextSize(2);
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.setCursor(60, 70);
-    tft.print("PRESSAO MAP");
+    tft.print("MAP SENSOR");
 
     tft.setTextSize(5);
     tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
     tft.setCursor(45, 115);
-    tft.printf("%.2f", valorMAP);
+    tft.printf("%.2f", valorTela);
 
     tft.setTextSize(2);
     tft.setCursor(105, 175);
     tft.print("V");
 
-    ultimoValor = valorMAP;
+    ultimoValor = valorTela;
   }
 
   if (cliqueDetectado) {
@@ -825,46 +821,6 @@ void telaSensorRPM() {
     cliqueDetectado = false;
     iniciado = false;
     ultimoValor = -99999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
-}
-
-void telaBarometrico() {
-   static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado) {
-    desenharTituloTelaSensor("BAROMETRICO");
-    desenharRodapeSensor();
-    iniciado = true;
-  }
-
-  if (ultimoValor != valorBarometrico) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(45, 70);
-    tft.print("SENSOR BARO");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(45, 115);
-    tft.printf("%.2f", valorBarometrico);
-
-    tft.setTextSize(2);
-    tft.setCursor(180, 175);
-    tft.print("V");
-
-    ultimoValor = valorBarometrico;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
     estadoUI = MENU_UI;
     tft.fillScreen(ST77XX_BLACK);
     desenharMenu();
@@ -1206,7 +1162,6 @@ bool telaEhSensorALDL(int tela) {
     tela == TELA_IAT ||
     tela == TELA_VOLT ||
     tela == TELA_RPM ||
-    tela == TELA_BAROMETRICO ||
     tela == TELA_TEMPO_INJECAO ||
     tela == TELA_CO2 ||
     tela == TELA_CODIGOS_ECU ||
@@ -2339,8 +2294,7 @@ void processarDados(const uint8_t* frame) {
   uint8_t rpmRaw   = lerPayloadByte(frame, 10);
   uint8_t velRaw   = lerPayloadByte(frame, 13);
   uint8_t CO2Raw   = lerPayloadByte(frame, 16);
-  uint8_t baroRaw = lerPayloadByte(frame, 25);
-  uint8_t mapRaw   = lerPayloadByte(frame, 28);
+  uint8_t mapRaw  = lerPayloadByte(frame, 26); // ADMAP - tensão do MAP
   uint8_t matRaw = lerPayloadByte(frame, 30);
   uint8_t battRaw  = lerPayloadByte(frame, 32);
   uint8_t bpwMsb   = lerPayloadByte(frame, 36);
@@ -2357,8 +2311,7 @@ void processarDados(const uint8_t* frame) {
   velocidade = velRaw;
   voltagem = battRaw / 10.0f;
   voltCO2 = CO2Raw * (5.0f / 255.0f);
-  valorBarometrico = baroRaw * (5.0f / 255.0f);
-  valorMAP = mapRaw * 0.0196f;
+  valorMAP = mapRaw * (5.0f / 255.0f);
   tempoInjecao = ((bpwMsb * 256.0f) + bpwLsb) / 65.536f;
 
   ultimaMensagemALDL = millis();
