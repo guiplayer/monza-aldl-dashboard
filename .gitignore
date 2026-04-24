@@ -1,0 +1,44 @@
+# Arduino build files
+*.hex
+*.elf
+*.bin
+*.map
+*.eep
+*.lst
+*.lss
+*.sym
+
+# Arduino IDE
+*.ino.cpp
+.arduino/
+build/
+build-*/
+.cache/
+
+# ESP32 / generated firmware
+*.partitions.bin
+*.bootloader.bin
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# PlatformIO, caso use algum dia
+.pio/
+.pioenvs/
+.piolibdeps/
+platformio.ini.bak
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Configs locais / segredos
+config.json
+secrets.h
+credentials.h
+wifi_config.h
