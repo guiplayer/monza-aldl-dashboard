@@ -56,29 +56,31 @@
 // IDENTIFICADORES DE TELAS (IDs)
 // =======================
 #define TELA_DASHBOARD        1
-#define TELA_AJUSTAR_HORA     12
-#define TELA_ALDL             13
-#define TELA_TESTE_I2C        19
-#define TELA_TESTE_ELET       20
-#define TELA_BME              21
-#define TELA_MPU              22
-#define TELA_STATUS_SD        23
-#define TELA_TESTE_BUZZER     24
-#define TELA_TESTE_DISPLAY    25
-#define TELA_AJUSTE_BRILHO    26
-#define TELA_SELECIONAR_GIF   27
-#define TELA_CONFIG_BUZZER    28
-#define TELA_OTA              29
-#define TELA_TPS              30
-#define TELA_MAP              31
-#define TELA_CTS              32
-#define TELA_IAT              33
-#define TELA_VOLT             34
-#define TELA_RPM              35
-#define TELA_TEMPO_INJECAO    36
-#define TELA_CO2              37
-#define TELA_CODIGOS_ECU      38
-#define TELA_LIMPAR_ECU       39
+#define TELA_AJUSTAR_HORA     2
+#define TELA_ALDL             3
+#define TELA_TESTE_I2C        4
+#define TELA_TESTE_ELET       5
+#define TELA_BME              6
+#define TELA_MPU              7
+#define TELA_STATUS_SD        8
+#define TELA_TESTE_BUZZER     9
+#define TELA_TESTE_DISPLAY    10
+#define TELA_AJUSTE_BRILHO    11
+#define TELA_SELECIONAR_GIF   12
+#define TELA_CONFIG_BUZZER    13
+#define TELA_OTA              14
+#define TELA_TPS              15
+#define TELA_MAP              16
+#define TELA_CTS              17
+#define TELA_IAT              18
+#define TELA_VOLT             19
+#define TELA_RPM              20
+#define TELA_TEMPO_INJECAO    21
+#define TELA_CO2              22
+#define TELA_CODIGOS_ECU      23
+#define TELA_LIMPAR_ECU       24
+#define TELA_ALERTAS          25
+#define TELA_DASH_DEFAULT     26
 
 // =======================
 // OBJETOS
@@ -117,12 +119,12 @@ struct Menu {
 
 const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Configuracao"};
 const char* submenuSensores[] = {"TPS","MAP","CTS (temp motor)","IAT (temp admissao)","Voltimetro","RPM","Tempo de injecao","CO2 POT","Voltar"};
-const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
+const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status MPU","Status BME","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
 const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Update via OTA","Voltar"};
 
 Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 4, nullptr };
 Menu menuSensores = { "Sensores", submenuSensores, 9, &menuPrincipal };
-Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 9, &menuPrincipal };
+Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 11, &menuPrincipal };
 Menu menuConfig = { "Configuracao", submenuConfig, 8, &menuPrincipal };
 
 Menu* menuAtual = &menuPrincipal;
@@ -184,6 +186,18 @@ uint8_t malf1 = 0;
 uint8_t malf2 = 0;
 uint8_t malf3 = 0;
 
+// Variaveis Alertas
+bool alertaTempMotorAtivo = true;
+bool alertaTensaoAtivo = true;
+bool alertaShiftLightAtivo = true;
+
+float alertaTempMotorLimite = 105.0;
+float alertaTensaoMinima = 11.5;
+
+// Variaveis Dash
+int dashAtual = 0;
+const int totalDashboards = 4;
+
 // Nome arquivo json
 const char* configFile = "/config.json";
 
@@ -212,6 +226,7 @@ bool aldlPrimeiroFrameOk = false;
 
 unsigned long aldlMillisInicioSessao = 0;
 unsigned long aldlUltimoPolling = 0;
+const unsigned long DASHBOARD_UI_UPDATE_MS = 300;
 const unsigned long ALDL_UI_UPDATE_MS = 180;
 
 uint8_t aldlUltimoTx[8];
@@ -231,6 +246,12 @@ void lerEncoder();
 void selecionarItemMenu();
 void atualizarTela();
 void atualizarDashboard();
+void desenharDashboardHeader(const char* titulo);
+void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char* valor, const char* unidade, uint16_t cor);
+void dashboardRelogioBME();
+void dashboardALDL1();
+void dashboardALDL2();
+void dashboardALDL3();
 void ajustarHora();
 void telaStatusI2C();
 void telaStatusEletrico();
@@ -256,10 +277,14 @@ int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition);
 void GIFDraw(GIFDRAW *pDraw);
 void rodarGifAbertura(String nomeArquivo);
 
-void atualizarBME();
-void atualizarMPU();
+void telaStatusBME();
+void telaStatusMPU();
+void telaAlerta();
+void telaDashDefault();
 void ajustarBacklight();
 void beep(int freq);
+void desenharLinhaAlertaTexto(int y, const char* nome, const char* valor, bool selecionado, bool ativo);
+void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* unidade, bool selecionado, bool editando);
 
 // ALDL
 void limparEstadoALDL();
@@ -361,6 +386,7 @@ void loop() {
   if (estadoUI == TELA_UI) {
     unsigned long intervaloAtual = INTERVALO_UPDATE;
     if (telaEhSensorALDL(telaAtiva)) intervaloAtual = ALDL_UI_UPDATE_MS;
+    if (telaAtiva == TELA_DASHBOARD) intervaloAtual = DASHBOARD_UI_UPDATE_MS;
     if (telaAtiva == TELA_OTA) intervaloAtual = 250;
 
     if (millis() - ultimoUpdate >= intervaloAtual || movimentoEncoder != 0) {
@@ -451,7 +477,11 @@ void lerEncoder() {
       telaAtiva != TELA_OTA &&
       telaAtiva != TELA_CO2 &&
       telaAtiva != TELA_CODIGOS_ECU &&
-      telaAtiva != TELA_LIMPAR_ECU) {
+      telaAtiva != TELA_LIMPAR_ECU &&
+      telaAtiva != TELA_MPU &&
+      telaAtiva != TELA_BME &&
+      telaAtiva != TELA_ALERTAS &&
+      telaAtiva != TELA_DASH_DEFAULT) {
 
       estadoUI = MENU_UI;
       desenharMenu();
@@ -512,17 +542,21 @@ void selecionarItemMenu() {
     if (menuIndex == 0)      { telaAtiva = TELA_ALDL;          estadoUI = TELA_UI; }
     else if (menuIndex == 1) { telaAtiva = TELA_CODIGOS_ECU;   estadoUI = TELA_UI; }
     else if (menuIndex == 2) { telaAtiva = TELA_LIMPAR_ECU;    estadoUI = TELA_UI; }
-    else if (menuIndex == 3) { telaAtiva = TELA_TESTE_I2C;     estadoUI = TELA_UI; }
-    else if (menuIndex == 4) { telaAtiva = TELA_TESTE_ELET;    estadoUI = TELA_UI; }
-    else if (menuIndex == 5) { telaAtiva = TELA_STATUS_SD;     estadoUI = TELA_UI; }
-    else if (menuIndex == 6) { telaAtiva = TELA_TESTE_BUZZER;  estadoUI = TELA_UI; }
-    else if (menuIndex == 7) { telaAtiva = TELA_TESTE_DISPLAY; estadoUI = TELA_UI; }
+    else if (menuIndex == 3) { telaAtiva = TELA_MPU;           estadoUI = TELA_UI; }
+    else if (menuIndex == 4) { telaAtiva = TELA_BME;           estadoUI = TELA_UI; }
+    else if (menuIndex == 5) { telaAtiva = TELA_TESTE_I2C;     estadoUI = TELA_UI; }
+    else if (menuIndex == 6) { telaAtiva = TELA_TESTE_ELET;    estadoUI = TELA_UI; }
+    else if (menuIndex == 7) { telaAtiva = TELA_STATUS_SD;     estadoUI = TELA_UI; }
+    else if (menuIndex == 8) { telaAtiva = TELA_TESTE_BUZZER;  estadoUI = TELA_UI; }
+    else if (menuIndex == 9) { telaAtiva = TELA_TESTE_DISPLAY; estadoUI = TELA_UI; }
   }
 
   else if (menuAtual == &menuConfig) {
     if (menuIndex == 0) { telaAtiva = TELA_AJUSTAR_HORA; estadoUI = TELA_UI; }
     else if (menuIndex == 1) { telaAtiva = TELA_SELECIONAR_GIF; estadoUI = TELA_UI; }
+    else if (menuIndex == 2) { telaAtiva = TELA_ALERTAS; estadoUI = TELA_UI; }
     else if (menuIndex == 3) { telaAtiva = TELA_AJUSTE_BRILHO; estadoUI = TELA_UI; }
+    else if (menuIndex == 4) { telaAtiva = TELA_DASH_DEFAULT; estadoUI = TELA_UI; }
     else if (menuIndex == 5) { telaAtiva = TELA_CONFIG_BUZZER; estadoUI = TELA_UI; }
     else if (menuIndex == 6) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
   }
@@ -533,7 +567,6 @@ void selecionarItemMenu() {
     tft.fillScreen(ST77XX_BLACK);
 
     
-
     if (telaAtiva == TELA_OTA) {
       iniciarOTA();
     }
@@ -558,8 +591,8 @@ void atualizarTela() {
     case TELA_AJUSTE_BRILHO: telaAjusteBrilho(); break;
     case TELA_CONFIG_BUZZER: telaConfigBuzzer(); break;
     case TELA_SELECIONAR_GIF: telaSelecaoGif(); break;
-    case TELA_BME:          atualizarBME(); break;
-    case TELA_MPU:          atualizarMPU(); break;
+    case TELA_BME:          telaStatusBME(); break;
+    case TELA_MPU:          telaStatusMPU(); break;
     case TELA_OTA:          telaOTA(); break;
     case TELA_TPS:            telaSensorTPS(); break;
     case TELA_MAP:            telaSensorMAP(); break;
@@ -571,6 +604,7 @@ void atualizarTela() {
     case TELA_CO2:           telaSensorCO2(); break;
     case TELA_CODIGOS_ECU:    telaCodigosECU(); break;
     case TELA_LIMPAR_ECU: telaLimparErrosECU(); break;
+    case TELA_ALERTAS: telaAlerta(); break;
   }
 }
 
@@ -869,67 +903,213 @@ void telaSensorTempoInjecao() {
 
 
 void atualizarDashboard() {
+  static bool iniciado = false;
+  static int ultimoDash = -1;
+
+  if (!iniciado) {
+    tft.fillScreen(ST77XX_BLACK);
+    iniciado = true;
+    ultimoDash = -1;
+  }
+
+  if (movimentoEncoder != 0) {
+    dashAtual += movimentoEncoder;
+
+    if (dashAtual < 0) {
+      dashAtual = totalDashboards - 1;
+    }
+
+    if (dashAtual >= totalDashboards) {
+      dashAtual = 0;
+    }
+
+    movimentoEncoder = 0;
+    ultimoDash = -1;
+    beep(freqEncoder);
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+    iniciado = false;
+    ultimoDash = -1;
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    return;
+  }
+
+  if (ultimoDash != dashAtual) {
+    tft.fillScreen(ST77XX_BLACK);
+    ultimoDash = dashAtual;
+  }
+
+  switch (dashAtual) {
+    case 0:
+      dashboardRelogioBME();
+      break;
+
+    case 1:
+      dashboardALDL1();
+      break;
+
+    case 2:
+      dashboardALDL2();
+      break;
+
+    case 3:
+      dashboardALDL3();
+      break;
+  }
+}
+
+void desenharDashboardHeader(const char* titulo) {
+  tft.fillRect(0, 0, 280, 38, ST77XX_BLACK);
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds(titulo, 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, 10);
+  tft.print(titulo);
+
+  tft.drawFastHLine(25, 33, 230, ST77XX_GREY);
+
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+  tft.setCursor(16, 240);
+  tft.print("Gire: trocar dash | Clique: voltar");
+
+  tft.setCursor(226, 240);
+  tft.printf("%d/%d", dashAtual + 1, totalDashboards);
+}
+
+void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char* valor, const char* unidade, uint16_t cor) {
+  tft.drawRoundRect(x, y, w, h, 6, cor);
+
+  tft.setTextSize(1);
+  tft.setTextColor(cor, ST77XX_BLACK);
+  tft.setCursor(x + 8, y + 8);
+  tft.print(titulo);
+
+  tft.setTextSize(3);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(x + 8, y + 27);
+  tft.print(valor);
+
+  if (strlen(unidade) > 0) {
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(x + 8, y + h - 14);
+    tft.print(unidade);
+  }
+}
+
+void dashboardRelogioBME() {
   DateTime now = rtc.now();
   float temp = bme.readTemperature();
   float hum = bme.readHumidity();
   float pres = bme.readPressure() / 100.0F;
 
-  int screenW = 280;
+  desenharDashboardHeader("DASH 1 - AMBIENTE");
 
-  tft.setTextSize(6);
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  tft.setTextSize(5);
   tft.setTextColor(0x07FF, ST77XX_BLACK);
-  tft.setCursor(45, 25);
+  tft.setCursor(50, 48);
   tft.printf("%02d:%02d", now.hour(), now.minute());
 
   tft.setTextSize(2);
   tft.setTextColor(0x03EF, ST77XX_BLACK);
-  tft.setCursor(225, 55);
+  tft.setCursor(220, 65);
   tft.printf("%02d", now.second());
 
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(80, 80);
+  tft.setCursor(75, 95);
   tft.printf("%02d/%02d/%04d", now.day(), now.month(), now.year());
 
-  tft.drawFastHLine(40, 102, 200, 0x03EF);
+  char valorTemp[16];
+  char valorHum[16];
+  char valorPres[16];
 
-  int cardW = 110;
-  int cardH = 60;
-  int yCards = 115;
-  int margemLateral = 25;
+  snprintf(valorTemp, sizeof(valorTemp), "%.1f", temp);
+  snprintf(valorHum, sizeof(valorHum), "%.0f", hum);
+  snprintf(valorPres, sizeof(valorPres), "%.0f", pres);
 
-  tft.drawRoundRect(margemLateral, yCards, cardW, cardH, 4, 0x07FF);
-  tft.setTextColor(0x07FF, ST77XX_BLACK);
-  tft.setTextSize(1);
-  tft.setCursor(margemLateral + 10, yCards + 8); tft.print("TEMPERATURE");
-  tft.setTextSize(3);
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(margemLateral + 10, yCards + 25); tft.printf("%.1f", temp);
-  tft.setTextSize(1); tft.print(" oC");
+  desenharCardDash(18, 130, 75, 78, "TEMP", valorTemp, "C", ST77XX_CYAN);
+  desenharCardDash(102, 130, 75, 78, "UMID", valorHum, "%", ST77XX_GREEN);
+  desenharCardDash(186, 130, 75, 78, "PRESS", valorPres, "hPa", ST77XX_ORANGE);
+}
 
-  int xHum = margemLateral + cardW + 10;
-  tft.drawRoundRect(xHum, yCards, cardW, cardH, 4, 0x07FF);
-  tft.setTextColor(0x07FF, ST77XX_BLACK);
-  tft.setTextSize(1);
-  tft.setCursor(xHum + 10, yCards + 8); tft.print("HUMIDITY");
-  tft.setTextSize(3);
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(xHum + 15, yCards + 25); tft.printf("%.0f", hum);
-  tft.setTextSize(2); tft.print("%");
+void dashboardALDL1() {
+  char vRPM[16];
+  char vTPS[16];
+  char vMAP[16];
+  char vBAT[16];
 
-  int xPressao = 40;
-  tft.setTextSize(1);
-  tft.setTextColor(0x07FF, ST77XX_BLACK);
-  tft.setCursor(xPressao, 190); tft.print("ATMOSPHERIC PRESSURE");
+  snprintf(vRPM, sizeof(vRPM), "%d", valorRPM);
+  snprintf(vTPS, sizeof(vTPS), "%.1f", valorTPS);
+  snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
+  snprintf(vBAT, sizeof(vBAT), "%.1f", voltagem);
 
-  tft.drawRect(xPressao, 202, 200, 10, 0x03EF);
-  int larguraBarra = map(constrain(pres, 950, 1050), 950, 1050, 0, 196);
-  tft.fillRect(xPressao + 2, 204, larguraBarra, 6, 0x07FF);
+  desenharDashboardHeader("DASH 2 - MOTOR");
 
-  tft.setTextSize(2);
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(xPressao, 218);
-  tft.printf("%.1f hPa", pres);
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
+  desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
+
+  desenharCardDash(15, 145, 120, 75, "MAP", vMAP, "V", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "BATERIA", vBAT, "V", ST77XX_ORANGE);
+}
+
+void dashboardALDL2() {
+  char vCTS[16];
+  char vIAT[16];
+  char vINJ[16];
+  char vCO2[16];
+
+  snprintf(vCTS, sizeof(vCTS), "%.1f", tempMotor);
+  snprintf(vIAT, sizeof(vIAT), "%.1f", tempAdmissao);
+  snprintf(vINJ, sizeof(vINJ), "%.2f", tempoInjecao);
+  snprintf(vCO2, sizeof(vCO2), "%.2f", voltCO2);
+
+  desenharDashboardHeader("DASH 3 - SENSORES");
+
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  desenharCardDash(15, 55, 120, 75, "TEMP MOTOR", vCTS, "C", ST77XX_RED);
+  desenharCardDash(145, 55, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_CYAN);
+
+  desenharCardDash(15, 145, 120, 75, "INJECAO", vINJ, "ms", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "CO2 POT", vCO2, "V", ST77XX_MAGENTA);
+}
+
+void dashboardALDL3() {
+  char vVEL[16];
+  char vECU[16];
+  char vRX[16];
+  char vCHK[16];
+
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+
+  snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
+  snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
+  snprintf(vRX, sizeof(vRX), "%d", pacotesRecebidos);
+  snprintf(vCHK, sizeof(vCHK), "%d", errosChecksum);
+
+  desenharDashboardHeader("DASH 4 - ECU");
+
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  desenharCardDash(15, 55, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_CYAN);
+  desenharCardDash(145, 55, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
+
+  desenharCardDash(15, 145, 120, 75, "PACOTES", vRX, "rx", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "CHECKSUM", vCHK, "erros", ST77XX_ORANGE);
 }
 
 void ajustarHora() {
@@ -1155,6 +1335,7 @@ void telaStatusSD() {
 
 bool telaEhSensorALDL(int tela) {
   return (
+    tela == TELA_DASHBOARD ||
     tela == TELA_ALDL ||
     tela == TELA_TPS ||
     tela == TELA_MAP ||
@@ -1930,6 +2111,11 @@ void salvarConfiguracoes() {
   doc["fErr"] = freqErro;
   doc["modoBuzzer"] = modoBuzzer;
   doc["aldlPollingMs"] = aldlPollingMs;
+  doc["alertaTempMotorAtivo"] = alertaTempMotorAtivo;
+  doc["alertaTensaoAtivo"] = alertaTensaoAtivo;
+  doc["alertaShiftLightAtivo"] = alertaShiftLightAtivo;
+  doc["alertaTempMotorLimite"] = alertaTempMotorLimite;
+  doc["alertaTensaoMinima"] = alertaTensaoMinima;
 
   serializeJsonPretty(doc, file);
   file.flush();
@@ -1956,6 +2142,11 @@ void carregarConfiguracoes() {
     freqErro    = doc["fErr"] | 800;
     modoBuzzer = doc["modoBuzzer"] | 1;
     aldlPollingMs = doc["aldlPollingMs"] | 100;
+    alertaTempMotorAtivo = doc["alertaTempMotorAtivo"] | true;
+    alertaTensaoAtivo = doc["alertaTensaoAtivo"] | true;
+    alertaShiftLightAtivo = doc["alertaShiftLightAtivo"] | true;
+    alertaTempMotorLimite = doc["alertaTempMotorLimite"] | 105.0;
+    alertaTensaoMinima = doc["alertaTensaoMinima"] | 11.5;
   }
   file.close();
 }
@@ -2531,7 +2722,7 @@ void loopOTA() {
 // OUTRAS FUNCOES
 // ======================================================
 
-void atualizarBME() {
+void telaStatusBME() {
   // Limpa somente a área de conteúdo, preservando header/menu se existir
   tft.fillRect(0, 45, 280, 195, ST77XX_BLACK);
 
@@ -2588,7 +2779,7 @@ void atualizarBME() {
   tft.printf("%.1f m", altitude);
 }
 
-void atualizarMPU() {
+void telaStatusMPU() {
   sensors_event_t a, g, t;
   mpu.getEvent(&a, &g, &t);
 
@@ -2671,6 +2862,182 @@ void atualizarMPU() {
   tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
   tft.setCursor(185, 208);
   tft.printf("%.1fC", t.temperature);
+}
+
+void telaAlerta() {
+  static bool iniciado = false;
+  static int opcao = 0;
+  static int ultimaOpcao = -1;
+  static bool editandoValor = false;
+
+  const int totalOpcoes = 6;
+
+  if (!iniciado) {
+    tft.fillScreen(ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(75, 15);
+    tft.print("ALERTAS");
+    tft.drawFastHLine(30, 35, 220, ST77XX_GREY);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(15, 245);
+    tft.print("Gire: navega/ajusta | Clique: seleciona");
+
+    iniciado = true;
+    opcao = 0;
+    ultimaOpcao = -1;
+    editandoValor = false;
+  }
+
+  if (movimentoEncoder != 0) {
+    if (editandoValor) {
+      switch (opcao) {
+        case 1:
+          alertaTempMotorLimite += movimentoEncoder;
+          if (alertaTempMotorLimite < 70.0) alertaTempMotorLimite = 70.0;
+          if (alertaTempMotorLimite > 130.0) alertaTempMotorLimite = 130.0;
+          break;
+
+        case 3:
+          alertaTensaoMinima += movimentoEncoder * 0.1;
+          if (alertaTensaoMinima < 9.0) alertaTensaoMinima = 9.0;
+          if (alertaTensaoMinima > 13.0) alertaTensaoMinima = 13.0;
+          alertaTensaoMinima = round(alertaTensaoMinima * 10.0) / 10.0;
+          break;
+      }
+
+      salvarConfiguracoes();
+    } else {
+      opcao += movimentoEncoder;
+
+      if (opcao < 0) opcao = totalOpcoes - 1;
+      if (opcao >= totalOpcoes) opcao = 0;
+    }
+
+    movimentoEncoder = 0;
+    ultimaOpcao = -1;
+    beep(freqEncoder);
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    switch (opcao) {
+      case 0:
+        alertaTempMotorAtivo = !alertaTempMotorAtivo;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqSucesso);
+        break;
+
+      case 1:
+        editandoValor = !editandoValor;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqClique);
+        break;
+
+      case 2:
+        alertaTensaoAtivo = !alertaTensaoAtivo;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqSucesso);
+        break;
+
+      case 3:
+        editandoValor = !editandoValor;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqClique);
+        break;
+
+      case 4:
+        alertaShiftLightAtivo = !alertaShiftLightAtivo;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqSucesso);
+        break;
+
+      case 5:
+        iniciado = false;
+        opcao = 0;
+        ultimaOpcao = -1;
+        editandoValor = false;
+        estadoUI = MENU_UI;
+        tft.fillScreen(ST77XX_BLACK);
+        desenharMenu();
+        beep(freqClique);
+        return;
+    }
+  }
+
+  if (ultimaOpcao != opcao || editandoValor) {
+    tft.fillRect(0, 50, 280, 185, ST77XX_BLACK);
+
+    desenharLinhaAlertaTexto(55, "Temp motor", alertaTempMotorAtivo ? "ON" : "OFF", opcao == 0, alertaTempMotorAtivo);
+    desenharLinhaAlertaValor(85, "Limite temp", alertaTempMotorLimite, "C", opcao == 1, editandoValor && opcao == 1);
+
+    desenharLinhaAlertaTexto(115, "Tensao bat", alertaTensaoAtivo ? "ON" : "OFF", opcao == 2, alertaTensaoAtivo);
+    desenharLinhaAlertaValor(145, "Min tensao", alertaTensaoMinima, "V", opcao == 3, editandoValor && opcao == 3);
+
+    desenharLinhaAlertaTexto(175, "Shift Light", alertaShiftLightAtivo ? "ON" : "OFF", opcao == 4, alertaShiftLightAtivo);
+    desenharLinhaAlertaTexto(205, "Voltar", "", opcao == 5, true);
+
+    ultimaOpcao = opcao;
+  }
+}
+
+void desenharLinhaAlertaTexto(int y, const char* nome, const char* valor, bool selecionado, bool ativo) {
+  uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+
+  if (selecionado) {
+    tft.fillRoundRect(8, y - 5, 264, 25, 5, corFundo);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_WHITE, corFundo);
+  tft.setCursor(18, y);
+  tft.print(nome);
+
+  if (strlen(valor) > 0) {
+    tft.setTextColor(ativo ? ST77XX_GREEN : ST77XX_RED, corFundo);
+    tft.setCursor(220, y);
+    tft.print(valor);
+  }
+}
+
+void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* unidade, bool selecionado, bool editando) {
+  uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+  uint16_t corValor = editando ? ST77XX_ORANGE : ST77XX_CYAN;
+
+  if (selecionado) {
+    tft.fillRoundRect(8, y - 5, 264, 25, 5, corFundo);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_WHITE, corFundo);
+  tft.setCursor(18, y);
+  tft.print(nome);
+
+  tft.setTextColor(corValor, corFundo);
+  tft.setCursor(190, y);
+
+  if (strcmp(unidade, "V") == 0) {
+    tft.printf("%.1f%s", valor, unidade);
+  } else {
+    tft.printf("%.0f%s", valor, unidade);
+  }
+
+  if (editando) {
+    tft.fillRect(0, 230, 280, 12, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+    tft.setCursor(20, 230);
+    tft.print("EDITANDO: gire para ajustar, clique salva");
+  }
 }
 
 void ajustarBacklight() {
