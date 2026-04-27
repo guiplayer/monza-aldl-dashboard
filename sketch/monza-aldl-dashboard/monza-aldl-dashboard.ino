@@ -411,12 +411,21 @@ void verificarAlertas() {
   if (estadoUI != TELA_UI) return;
   if (!telaEhSensorALDL(telaAtiva)) return;
 
+  // Nao dispara alerta antes do primeiro frame valido
+  if (!aldlPrimeiroFrameOk) return;
+  if (!aldlTemFrameValido) return;
+  if (pacotesRecebidos <= 0) return;
+
+  // Garante que a ECU ainda esta viva
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+  if (!ecuConectada) return;
+
   if (alertaTempMotorAtivo && tempMotor >= alertaTempMotorLimite) {
     desenharAlertaTela("TEMP MOTOR", "ALTA", ST77XX_RED);
     return;
   }
 
-  if (alertaTensaoAtivo && voltagem <= alertaTensaoMinima) {
+  if (alertaTensaoAtivo && voltagem > 0 && voltagem <= alertaTensaoMinima) {
     desenharAlertaTela("TENSAO", "BAIXA", ST77XX_ORANGE);
     return;
   }
@@ -428,20 +437,11 @@ void verificarAlertas() {
 }
 
 void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFundo) {
-  static unsigned long ultimoPisca = 0;
-  static bool estadoPisca = false;
-  static unsigned long ultimoAlerta = 0;
+  static unsigned long ultimoDesenho = 0;
   static char ultimoTitulo[24] = "";
   static char ultimoMensagem[32] = "";
   static uint16_t ultimaCor = 0;
-
-  if (millis() - ultimoPisca < 250) {
-    return;
-  }
-
-  ultimoPisca = millis();
-  estadoPisca = !estadoPisca;
-  ultimoAlerta = millis();
+  static bool alertaDesenhado = false;
 
   bool mudouAlerta =
     strcmp(ultimoTitulo, titulo) != 0 ||
@@ -456,32 +456,36 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
     ultimoMensagem[sizeof(ultimoMensagem) - 1] = '\0';
 
     ultimaCor = corFundo;
-    estadoPisca = true;
+    alertaDesenhado = false;
   }
 
-  if (estadoPisca) {
-    tft.fillRect(0, 45, 280, 150, corFundo);
-
-    tft.drawRoundRect(10, 55, 260, 125, 8, ST77XX_WHITE);
-
-    tft.setTextWrap(false);
-
-    tft.setTextSize(3);
-    tft.setTextColor(ST77XX_WHITE, corFundo);
-
-    int16_t x1, y1;
-    uint16_t w, h;
-    tft.getTextBounds(titulo, 0, 0, &x1, &y1, &w, &h);
-    tft.setCursor((280 - w) / 2, 75);
-    tft.print(titulo);
-
-    tft.setTextSize(2);
-    tft.getTextBounds(mensagem, 0, 0, &x1, &y1, &w, &h);
-    tft.setCursor((280 - w) / 2, 125);
-    tft.print(mensagem);
-  } else {
-    tft.fillRect(0, 45, 280, 150, ST77XX_BLACK);
+  // Evita redesenhar sem necessidade
+  if (alertaDesenhado && millis() - ultimoDesenho < 300) {
+    return;
   }
+
+  ultimoDesenho = millis();
+  alertaDesenhado = true;
+
+  tft.fillRect(0, 45, 280, 150, corFundo);
+  tft.drawRoundRect(10, 55, 260, 125, 8, ST77XX_WHITE);
+
+  tft.setTextWrap(false);
+
+  tft.setTextSize(3);
+  tft.setTextColor(ST77XX_WHITE, corFundo);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds(titulo, 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, 75);
+  tft.print(titulo);
+
+  tft.setTextSize(2);
+  tft.getTextBounds(mensagem, 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, 125);
+  tft.print(mensagem);
 }
 
 // =======================
@@ -566,7 +570,10 @@ void lerEncoder() {
       telaAtiva != TELA_LIMPAR_ECU &&
       telaAtiva != TELA_MPU &&
       telaAtiva != TELA_BME &&
+      telaAtiva != TELA_TESTE_I2C &&
+      telaAtiva != TELA_TESTE_ELET &&
       telaAtiva != TELA_ALERTAS &&
+      telaAtiva != TELA_TESTE_DISPLAY &&
       telaAtiva != TELA_DASH_DEFAULT) {
 
       estadoUI = MENU_UI;
@@ -1051,13 +1058,13 @@ void atualizarDashboard() {
       break;
 
     case 5:
-      dashboardALDL4();
+      dashboardALDL5();
       break;
   }
 }
 
 void desenharDashboardHeader(const char* titulo) {
-  tft.fillRect(0, 0, 280, 38, ST77XX_BLACK);
+  //tft.fillRect(0, 0, 280, 38, ST77XX_BLACK);
 
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
@@ -1080,6 +1087,7 @@ void desenharDashboardHeader(const char* titulo) {
 }
 
 void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char* valor, const char* unidade, uint16_t cor) {
+  tft.fillRoundRect(x, y, w, h, 6, ST77XX_BLACK);
   tft.drawRoundRect(x, y, w, h, 6, cor);
 
   tft.setTextSize(1);
@@ -1107,8 +1115,6 @@ void dashboardRelogioBME() {
   float pres = bme.readPressure() / 100.0F;
 
   desenharDashboardHeader("DASH 1 - AMBIENTE");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
 
   tft.setTextSize(5);
   tft.setTextColor(0x07FF, ST77XX_BLACK);
@@ -1149,9 +1155,7 @@ void dashboardALDL1() {
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
   snprintf(vBAT, sizeof(vBAT), "%.1f", voltagem);
 
-  desenharDashboardHeader("DASH 2 - MOTOR");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+  desenharDashboardHeader("DASH 1 - MOTOR");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
@@ -1171,9 +1175,7 @@ void dashboardALDL2() {
   snprintf(vINJ, sizeof(vINJ), "%.2f", tempoInjecao);
   snprintf(vCO2, sizeof(vCO2), "%.2f", voltCO2);
 
-  desenharDashboardHeader("DASH 3 - SENSORES");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+  desenharDashboardHeader("DASH 2 - SENSORES");
 
   desenharCardDash(15, 55, 120, 75, "TEMP MOTOR", vCTS, "C", ST77XX_RED);
   desenharCardDash(145, 55, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_CYAN);
@@ -1195,9 +1197,7 @@ void dashboardALDL3() {
   snprintf(vRX, sizeof(vRX), "%d", pacotesRecebidos);
   snprintf(vCHK, sizeof(vCHK), "%d", errosChecksum);
 
-  desenharDashboardHeader("DASH 4 - ECU");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+  desenharDashboardHeader("DASH 3 - ECU");
 
   desenharCardDash(15, 55, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_CYAN);
   desenharCardDash(145, 55, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
@@ -1217,9 +1217,7 @@ void dashboardALDL4() {
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
   snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
 
-  desenharDashboardHeader("DASH 5 - CUSTOM");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+  desenharDashboardHeader("DASH 4 - CUSTOM");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
@@ -1240,9 +1238,7 @@ void dashboardALDL5() {
 
   formatarTempoMotor(vTempo, sizeof(vTempo), tempoMotorLigado);
 
-  desenharDashboardHeader("DASH 6 - STATUS");
-
-  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+  desenharDashboardHeader("DASH 5 - STATUS");
 
   desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanOnALDL ? ST77XX_GREEN : ST77XX_RED);
   desenharCardDash(145, 55, 120, 75, "MOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
@@ -1366,6 +1362,14 @@ void telaStatusI2C() {
   if (encontrados == 0) {
     tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
     tft.setCursor(50, 100); tft.print("SEM DISPOSITIVOS");
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
   }
 }
 
