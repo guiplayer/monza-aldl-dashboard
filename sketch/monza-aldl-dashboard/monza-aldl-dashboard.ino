@@ -2661,8 +2661,8 @@ void processarDados(const uint8_t* frame) {
   valorMAP = mapRaw * (5.0f / 255.0f);
   tempoInjecao = ((bpwMsb * 256.0f) + bpwLsb) / 65.536f;
   tempoMotorLigado = timeEng;
-  fanOnALDL = (lccpmw & (1 << 0)) != 0;
-  shiftLightALDL = (lccpmw & (1 << 7)) != 0;
+  fanOnALDL = (lccpmw & (1 << 0)) == 0;
+  shiftLightALDL = (lccpmw & (1 << 7)) == 0;
 
   ultimaMensagemALDL = millis();
   pacotesRecebidos++;
