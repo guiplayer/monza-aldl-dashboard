@@ -411,6 +411,7 @@ void verificarAlertas() {
   if (estadoUI != TELA_UI) return;
   if (!telaEhSensorALDL(telaAtiva)) return;
 
+
   // Nao dispara alerta antes do primeiro frame valido
   if (!aldlPrimeiroFrameOk) return;
   if (!aldlTemFrameValido) return;
@@ -425,7 +426,9 @@ void verificarAlertas() {
     return;
   }
 
+
   if (alertaTensaoAtivo && voltagem > 0 && voltagem <= alertaTensaoMinima) {
+
     desenharAlertaTela("TENSAO", "BAIXA", ST77XX_ORANGE);
     return;
   }
@@ -443,6 +446,7 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
   static uint16_t ultimaCor = 0;
   static bool alertaDesenhado = false;
 
+
   bool mudouAlerta =
     strcmp(ultimoTitulo, titulo) != 0 ||
     strcmp(ultimoMensagem, mensagem) != 0 ||
@@ -456,6 +460,7 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
     ultimoMensagem[sizeof(ultimoMensagem) - 1] = '\0';
 
     ultimaCor = corFundo;
+
     alertaDesenhado = false;
   }
 
@@ -486,6 +491,7 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
   tft.getTextBounds(mensagem, 0, 0, &x1, &y1, &w, &h);
   tft.setCursor((280 - w) / 2, 125);
   tft.print(mensagem);
+
 }
 
 // =======================
