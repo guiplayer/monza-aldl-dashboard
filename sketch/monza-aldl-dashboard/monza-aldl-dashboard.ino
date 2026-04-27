@@ -2532,15 +2532,145 @@ void loopOTA() {
 // ======================================================
 
 void atualizarBME() {
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK); tft.setTextSize(2);
-  tft.setCursor(15,60); tft.printf("Temp: %.1f C", bme.readTemperature());
-  tft.setCursor(15,90); tft.printf("Hum: %.1f %%", bme.readHumidity());
+  // Limpa somente a área de conteúdo, preservando header/menu se existir
+  tft.fillRect(0, 45, 280, 195, ST77XX_BLACK);
+
+  float temperatura = bme.readTemperature();
+  float umidade = bme.readHumidity();
+  float pressao = bme.readPressure() / 100.0F; // hPa
+  float altitude = bme.readAltitude(1013.25);  // referência nível do mar
+
+  tft.setTextWrap(false);
+
+  // Título da tela
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.setCursor(15, 55);
+  tft.print("Sensor BME280");
+
+  // Linha separadora
+  tft.drawFastHLine(15, 80, 250, ST77XX_BLUE);
+
+  // Temperatura
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 95);
+  tft.print("Temp:");
+
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.setCursor(120, 95);
+  tft.printf("%.1f C", temperatura);
+
+  // Umidade
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 125);
+  tft.print("Umid:");
+
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.setCursor(120, 125);
+  tft.printf("%.1f %%", umidade);
+
+  // Pressão
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 155);
+  tft.print("Press:");
+
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(120, 155);
+  tft.printf("%.1f hPa", pressao);
+
+  // Altitude estimada
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 185);
+  tft.print("Alt:");
+
+  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+  tft.setCursor(120, 185);
+  tft.printf("%.1f m", altitude);
 }
 
 void atualizarMPU() {
-  sensors_event_t a,g,t; mpu.getEvent(&a,&g,&t);
-  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK); tft.setTextSize(2);
-  tft.setCursor(15,60); tft.printf("Giro X: %.2f", g.gyro.x);
+  sensors_event_t a, g, t;
+  mpu.getEvent(&a, &g, &t);
+
+  // Limpa somente a área de conteúdo, preservando header/menu se existir
+  tft.fillRect(0, 45, 280, 195, ST77XX_BLACK);
+
+  tft.setTextWrap(false);
+
+  // Título da tela
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+  tft.setCursor(15, 55);
+  tft.print("Sensor MPU6050");
+
+  // Linha separadora
+  tft.drawFastHLine(15, 80, 250, ST77XX_MAGENTA);
+
+  // Acelerômetro
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.setCursor(15, 92);
+  tft.print("ACELEROMETRO m/s2");
+
+  tft.setTextSize(2);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 110);
+  tft.print("X:");
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.setCursor(55, 110);
+  tft.printf("%.2f", a.acceleration.x);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(145, 110);
+  tft.print("Y:");
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.setCursor(185, 110);
+  tft.printf("%.2f", a.acceleration.y);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 135);
+  tft.print("Z:");
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.setCursor(55, 135);
+  tft.printf("%.2f", a.acceleration.z);
+
+  // Giroscópio
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+  tft.setCursor(15, 165);
+  tft.print("GIROSCOPIO rad/s");
+
+  tft.setTextSize(2);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 183);
+  tft.print("X:");
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(55, 183);
+  tft.printf("%.2f", g.gyro.x);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(145, 183);
+  tft.print("Y:");
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(185, 183);
+  tft.printf("%.2f", g.gyro.y);
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(15, 208);
+  tft.print("Z:");
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(55, 208);
+  tft.printf("%.2f", g.gyro.z);
+
+  // Temperatura interna do MPU
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(145, 208);
+  tft.print("T:");
+  tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+  tft.setCursor(185, 208);
+  tft.printf("%.1fC", t.temperature);
 }
 
 void ajustarBacklight() {
