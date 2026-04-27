@@ -178,6 +178,7 @@ float voltCO2 = 0;
 float tempoInjecao = 0;
 float tempAdmissao = 0;
 int velocidade = 0;
+int tempoMotorLigado = 0;
 int errosChecksum = 0;
 unsigned long ultimaMensagemALDL = 0;
 int pacotesRecebidos = 0;
@@ -185,6 +186,9 @@ bool ecuConectada = false;
 uint8_t malf1 = 0;
 uint8_t malf2 = 0;
 uint8_t malf3 = 0;
+bool fanOnALDL = false;
+bool shiftLightALDL = false;
+uint8_t lccpmw = 0;
 
 // Variaveis Alertas
 bool alertaTempMotorAtivo = true;
@@ -196,7 +200,7 @@ float alertaTensaoMinima = 11.5;
 
 // Variaveis Dash
 int dashAtual = 0;
-const int totalDashboards = 4;
+const int totalDashboards = 6;
 
 // Nome arquivo json
 const char* configFile = "/config.json";
@@ -252,6 +256,8 @@ void dashboardRelogioBME();
 void dashboardALDL1();
 void dashboardALDL2();
 void dashboardALDL3();
+void dashboardALDL4();
+void dashboardALDL5();
 void ajustarHora();
 void telaStatusI2C();
 void telaStatusEletrico();
@@ -266,10 +272,11 @@ void telaOTA();
 void telaSensorCO2();
 void telaCodigosECU();
 void telaLimparErrosECU();
+void formatarTempoMotor(char* buffer, size_t tamanho, int segundos);
 std::vector<String> obterFalhasAtivas();
 void salvarConfiguracoes();
 void carregarConfiguracoes();
-
+void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFundo);
 void * GIFOpenFile(const char *fname, int32_t *pSize);
 void GIFCloseFile(void *pHandle);
 int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen);
@@ -382,7 +389,7 @@ void loop() {
 
   ajustarBacklight();
   lerEncoder();
-
+  
   if (estadoUI == TELA_UI) {
     unsigned long intervaloAtual = INTERVALO_UPDATE;
     if (telaEhSensorALDL(telaAtiva)) intervaloAtual = ALDL_UI_UPDATE_MS;
@@ -395,7 +402,86 @@ void loop() {
     }
   }
 
+  verificarAlertas();
+
   delay(1);
+}
+
+void verificarAlertas() {
+  if (estadoUI != TELA_UI) return;
+  if (!telaEhSensorALDL(telaAtiva)) return;
+
+  if (alertaTempMotorAtivo && tempMotor >= alertaTempMotorLimite) {
+    desenharAlertaTela("TEMP MOTOR", "ALTA", ST77XX_RED);
+    return;
+  }
+
+  if (alertaTensaoAtivo && voltagem <= alertaTensaoMinima) {
+    desenharAlertaTela("TENSAO", "BAIXA", ST77XX_ORANGE);
+    return;
+  }
+
+  if (alertaShiftLightAtivo && shiftLightALDL) {
+    desenharAlertaTela("SHIFT", "TROCAR MARCHA", ST77XX_YELLOW);
+    return;
+  }
+}
+
+void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFundo) {
+  static unsigned long ultimoPisca = 0;
+  static bool estadoPisca = false;
+  static unsigned long ultimoAlerta = 0;
+  static char ultimoTitulo[24] = "";
+  static char ultimoMensagem[32] = "";
+  static uint16_t ultimaCor = 0;
+
+  if (millis() - ultimoPisca < 250) {
+    return;
+  }
+
+  ultimoPisca = millis();
+  estadoPisca = !estadoPisca;
+  ultimoAlerta = millis();
+
+  bool mudouAlerta =
+    strcmp(ultimoTitulo, titulo) != 0 ||
+    strcmp(ultimoMensagem, mensagem) != 0 ||
+    ultimaCor != corFundo;
+
+  if (mudouAlerta) {
+    strncpy(ultimoTitulo, titulo, sizeof(ultimoTitulo) - 1);
+    ultimoTitulo[sizeof(ultimoTitulo) - 1] = '\0';
+
+    strncpy(ultimoMensagem, mensagem, sizeof(ultimoMensagem) - 1);
+    ultimoMensagem[sizeof(ultimoMensagem) - 1] = '\0';
+
+    ultimaCor = corFundo;
+    estadoPisca = true;
+  }
+
+  if (estadoPisca) {
+    tft.fillRect(0, 45, 280, 150, corFundo);
+
+    tft.drawRoundRect(10, 55, 260, 125, 8, ST77XX_WHITE);
+
+    tft.setTextWrap(false);
+
+    tft.setTextSize(3);
+    tft.setTextColor(ST77XX_WHITE, corFundo);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+    tft.getTextBounds(titulo, 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor((280 - w) / 2, 75);
+    tft.print(titulo);
+
+    tft.setTextSize(2);
+    tft.getTextBounds(mensagem, 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor((280 - w) / 2, 125);
+    tft.print(mensagem);
+  } else {
+    tft.fillRect(0, 45, 280, 150, ST77XX_BLACK);
+  }
 }
 
 // =======================
@@ -959,6 +1045,14 @@ void atualizarDashboard() {
     case 3:
       dashboardALDL3();
       break;
+
+    case 4:
+      dashboardALDL4();
+      break;
+
+    case 5:
+      dashboardALDL4();
+      break;
   }
 }
 
@@ -1110,6 +1204,51 @@ void dashboardALDL3() {
 
   desenharCardDash(15, 145, 120, 75, "PACOTES", vRX, "rx", ST77XX_GREEN);
   desenharCardDash(145, 145, 120, 75, "CHECKSUM", vCHK, "erros", ST77XX_ORANGE);
+}
+
+void dashboardALDL4() {
+  char vRPM[16];
+  char vTPS[16];
+  char vMAP[16];
+  char vVEL[16];
+
+  snprintf(vRPM, sizeof(vRPM), "%d", valorRPM);
+  snprintf(vTPS, sizeof(vTPS), "%.1f", valorTPS);
+  snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
+  snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
+
+  desenharDashboardHeader("DASH 5 - CUSTOM");
+
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
+  desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
+
+  desenharCardDash(15, 145, 120, 75, "MAP", vMAP, "V", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_ORANGE);
+}
+
+void dashboardALDL5() {
+  char vFan[8];
+  char vMotor[8];
+  char vTempo[16];
+  char vECU[8];
+
+  snprintf(vFan, sizeof(vFan), "%s", fanOnALDL ? "ON" : "OFF");
+  snprintf(vMotor, sizeof(vMotor), "%s", tempoMotorLigado > 0 ? "ON" : "OFF");
+  snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
+
+  formatarTempoMotor(vTempo, sizeof(vTempo), tempoMotorLigado);
+
+  desenharDashboardHeader("DASH 6 - STATUS");
+
+  tft.fillRect(0, 42, 280, 190, ST77XX_BLACK);
+
+  desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanOnALDL ? ST77XX_GREEN : ST77XX_RED);
+  desenharCardDash(145, 55, 120, 75, "MOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
+
+  desenharCardDash(15, 145, 120, 75, "TEMPO", vTempo, "motor ligado", ST77XX_CYAN);
+  desenharCardDash(145, 145, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
 }
 
 void ajustarHora() {
@@ -2363,6 +2502,10 @@ void limparEstadoALDL() {
   voltagem = 0;
   tempoInjecao = 0;
   velocidade = 0;
+  tempoMotorLigado = 0;
+  lccpmw = 0;
+  fanOnALDL = false;
+  shiftLightALDL = false;
   errosChecksum = 0;
   ultimaMensagemALDL = 0;
   pacotesRecebidos = 0;
@@ -2485,15 +2628,18 @@ void processarDados(const uint8_t* frame) {
   uint8_t rpmRaw   = lerPayloadByte(frame, 10);
   uint8_t velRaw   = lerPayloadByte(frame, 13);
   uint8_t CO2Raw   = lerPayloadByte(frame, 16);
-  uint8_t mapRaw  = lerPayloadByte(frame, 26); // ADMAP - tensão do MAP
+  uint8_t mapRaw  = lerPayloadByte(frame, 26);
   uint8_t matRaw = lerPayloadByte(frame, 30);
   uint8_t battRaw  = lerPayloadByte(frame, 32);
   uint8_t bpwMsb   = lerPayloadByte(frame, 36);
   uint8_t bpwLsb   = lerPayloadByte(frame, 37);
+  uint8_t timeEng   = lerPayloadByte(frame, 41);
+  uint8_t lccpmwRaw = lerPayloadByte(frame, 58);
 
   malf1 = malf1Raw;
   malf2 = malf2Raw;
   malf3 = malf3Raw;
+  lccpmw = lccpmwRaw;
 
   tempMotor = (tempRaw * 0.75f) - 40.0f;
   tempAdmissao = (matRaw * 0.75f) - 40.0f;
@@ -2504,10 +2650,25 @@ void processarDados(const uint8_t* frame) {
   voltCO2 = CO2Raw * (5.0f / 255.0f);
   valorMAP = mapRaw * (5.0f / 255.0f);
   tempoInjecao = ((bpwMsb * 256.0f) + bpwLsb) / 65.536f;
+  tempoMotorLigado = timeEng;
+  fanOnALDL = (lccpmw & (1 << 0)) != 0;
+  shiftLightALDL = (lccpmw & (1 << 7)) != 0;
 
   ultimaMensagemALDL = millis();
   pacotesRecebidos++;
   ecuConectada = true;
+}
+
+void formatarTempoMotor(char* buffer, size_t tamanho, int segundos) {
+  int horas = segundos / 3600;
+  int minutos = (segundos % 3600) / 60;
+  int seg = segundos % 60;
+
+  if (horas > 0) {
+    snprintf(buffer, tamanho, "%02d:%02d:%02d", horas, minutos, seg);
+  } else {
+    snprintf(buffer, tamanho, "%02d:%02d", minutos, seg);
+  }
 }
 
 void processarBufferRecepcaoALDL() {
@@ -2723,145 +2884,230 @@ void loopOTA() {
 // ======================================================
 
 void telaStatusBME() {
-  // Limpa somente a área de conteúdo, preservando header/menu se existir
-  tft.fillRect(0, 45, 280, 195, ST77XX_BLACK);
+  static bool iniciado = false;
+  static float ultimaTemperatura = -9999;
+  static float ultimaUmidade = -9999;
+  static float ultimaPressao = -9999;
+  static float ultimaAltitude = -9999;
 
   float temperatura = bme.readTemperature();
   float umidade = bme.readHumidity();
-  float pressao = bme.readPressure() / 100.0F; // hPa
-  float altitude = bme.readAltitude(1013.25);  // referência nível do mar
+  float pressao = bme.readPressure() / 100.0F;
+  float altitude = bme.readAltitude(1013.25);
 
-  tft.setTextWrap(false);
+  if (!iniciado) {
+    desenharTituloTelaSensor("BME280");
+    desenharRodapeSensor();
 
-  // Título da tela
-  tft.setTextSize(2);
-  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  tft.setCursor(15, 55);
-  tft.print("Sensor BME280");
+    iniciado = true;
+    ultimaTemperatura = -9999;
+    ultimaUmidade = -9999;
+    ultimaPressao = -9999;
+    ultimaAltitude = -9999;
+  }
 
-  // Linha separadora
-  tft.drawFastHLine(15, 80, 250, ST77XX_BLUE);
+  if (
+    temperatura != ultimaTemperatura ||
+    umidade != ultimaUmidade ||
+    pressao != ultimaPressao ||
+    altitude != ultimaAltitude
+  ) {
+    tft.fillRect(0, 50, 280, 175, ST77XX_BLACK);
 
-  // Temperatura
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 95);
-  tft.print("Temp:");
+    tft.setTextWrap(false);
 
-  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(120, 95);
-  tft.printf("%.1f C", temperatura);
+    // Temperatura
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 60);
+    tft.print("TEMP:");
 
-  // Umidade
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 125);
-  tft.print("Umid:");
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(130, 60);
+    tft.printf("%.1f C", temperatura);
 
-  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  tft.setCursor(120, 125);
-  tft.printf("%.1f %%", umidade);
+    // Umidade
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 95);
+    tft.print("UMID:");
 
-  // Pressão
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 155);
-  tft.print("Press:");
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(130, 95);
+    tft.printf("%.1f %%", umidade);
 
-  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  tft.setCursor(120, 155);
-  tft.printf("%.1f hPa", pressao);
+    // Pressao
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 130);
+    tft.print("PRESS:");
 
-  // Altitude estimada
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 185);
-  tft.print("Alt:");
+    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    tft.setCursor(130, 130);
+    tft.printf("%.1f", pressao);
 
-  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
-  tft.setCursor(120, 185);
-  tft.printf("%.1f m", altitude);
+    tft.setTextSize(1);
+    tft.setCursor(220, 136);
+    tft.print("hPa");
+
+    // Altitude
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 165);
+    tft.print("ALT:");
+
+    tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+    tft.setCursor(130, 165);
+    tft.printf("%.1f m", altitude);
+
+    ultimaTemperatura = temperatura;
+    ultimaUmidade = umidade;
+    ultimaPressao = pressao;
+    ultimaAltitude = altitude;
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+    iniciado = false;
+    ultimaTemperatura = -9999;
+    ultimaUmidade = -9999;
+    ultimaPressao = -9999;
+    ultimaAltitude = -9999;
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
+  }
 }
 
 void telaStatusMPU() {
+  static bool iniciado = false;
+  static float ultimoAx = -9999;
+  static float ultimoAy = -9999;
+  static float ultimoAz = -9999;
+  static float ultimoGx = -9999;
+  static float ultimoGy = -9999;
+  static float ultimoGz = -9999;
+  static float ultimaTemp = -9999;
+
   sensors_event_t a, g, t;
   mpu.getEvent(&a, &g, &t);
 
-  // Limpa somente a área de conteúdo, preservando header/menu se existir
-  tft.fillRect(0, 45, 280, 195, ST77XX_BLACK);
+  if (!iniciado) {
+    desenharTituloTelaSensor("MPU6050");
+    desenharRodapeSensor();
 
-  tft.setTextWrap(false);
+    iniciado = true;
+    ultimoAx = -9999;
+    ultimoAy = -9999;
+    ultimoAz = -9999;
+    ultimoGx = -9999;
+    ultimoGy = -9999;
+    ultimoGz = -9999;
+    ultimaTemp = -9999;
+  }
 
-  // Título da tela
-  tft.setTextSize(2);
-  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
-  tft.setCursor(15, 55);
-  tft.print("Sensor MPU6050");
+  if (
+    a.acceleration.x != ultimoAx ||
+    a.acceleration.y != ultimoAy ||
+    a.acceleration.z != ultimoAz ||
+    g.gyro.x != ultimoGx ||
+    g.gyro.y != ultimoGy ||
+    g.gyro.z != ultimoGz ||
+    t.temperature != ultimaTemp
+  ) {
+    tft.fillRect(0, 50, 280, 175, ST77XX_BLACK);
 
-  // Linha separadora
-  tft.drawFastHLine(15, 80, 250, ST77XX_MAGENTA);
+    tft.setTextWrap(false);
 
-  // Acelerômetro
-  tft.setTextSize(1);
-  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-  tft.setCursor(15, 92);
-  tft.print("ACELEROMETRO m/s2");
+    // Acelerometro
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(20, 55);
+    tft.print("ACELEROMETRO m/s2");
 
-  tft.setTextSize(2);
+    tft.setTextSize(2);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 110);
-  tft.print("X:");
-  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(55, 110);
-  tft.printf("%.2f", a.acceleration.x);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 75);
+    tft.print("X:");
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(60, 75);
+    tft.printf("%.2f", a.acceleration.x);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(145, 110);
-  tft.print("Y:");
-  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(185, 110);
-  tft.printf("%.2f", a.acceleration.y);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(145, 75);
+    tft.print("Y:");
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(180, 75);
+    tft.printf("%.2f", a.acceleration.y);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 135);
-  tft.print("Z:");
-  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(55, 135);
-  tft.printf("%.2f", a.acceleration.z);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 103);
+    tft.print("Z:");
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(60, 103);
+    tft.printf("%.2f", a.acceleration.z);
 
-  // Giroscópio
-  tft.setTextSize(1);
-  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
-  tft.setCursor(15, 165);
-  tft.print("GIROSCOPIO rad/s");
+    // Giroscopio
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+    tft.setCursor(20, 133);
+    tft.print("GIROSCOPIO rad/s");
 
-  tft.setTextSize(2);
+    tft.setTextSize(2);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 183);
-  tft.print("X:");
-  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  tft.setCursor(55, 183);
-  tft.printf("%.2f", g.gyro.x);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 153);
+    tft.print("X:");
+    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    tft.setCursor(60, 153);
+    tft.printf("%.2f", g.gyro.x);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(145, 183);
-  tft.print("Y:");
-  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  tft.setCursor(185, 183);
-  tft.printf("%.2f", g.gyro.y);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(145, 153);
+    tft.print("Y:");
+    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    tft.setCursor(180, 153);
+    tft.printf("%.2f", g.gyro.y);
 
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(15, 208);
-  tft.print("Z:");
-  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-  tft.setCursor(55, 208);
-  tft.printf("%.2f", g.gyro.z);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(25, 181);
+    tft.print("Z:");
+    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    tft.setCursor(60, 181);
+    tft.printf("%.2f", g.gyro.z);
 
-  // Temperatura interna do MPU
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(145, 208);
-  tft.print("T:");
-  tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
-  tft.setCursor(185, 208);
-  tft.printf("%.1fC", t.temperature);
+    // Temperatura interna
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(145, 181);
+    tft.print("T:");
+    tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+    tft.setCursor(180, 181);
+    tft.printf("%.1fC", t.temperature);
+
+    ultimoAx = a.acceleration.x;
+    ultimoAy = a.acceleration.y;
+    ultimoAz = a.acceleration.z;
+    ultimoGx = g.gyro.x;
+    ultimoGy = g.gyro.y;
+    ultimoGz = g.gyro.z;
+    ultimaTemp = t.temperature;
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+    iniciado = false;
+    ultimoAx = -9999;
+    ultimoAy = -9999;
+    ultimoAz = -9999;
+    ultimoGx = -9999;
+    ultimoGy = -9999;
+    ultimoGz = -9999;
+    ultimaTemp = -9999;
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
+  }
 }
 
 void telaAlerta() {
