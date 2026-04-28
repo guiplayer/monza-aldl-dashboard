@@ -43,6 +43,7 @@
 #define ENC_SW     27
 #define PIN_BUZZER 33
 #define PIN_ILUMINACAO  34
+#define PIN_SHIFT_LIGHT   35
 #define RX2 16
 #define TX2 17
 
@@ -186,9 +187,8 @@ bool ecuConectada = false;
 uint8_t malf1 = 0;
 uint8_t malf2 = 0;
 uint8_t malf3 = 0;
-bool fanOnALDL = false;
-bool shiftLightALDL = false;
 uint8_t lccpmw = 0;
+float fanEstimadoLimite = 100.0;
 
 // Variaveis Alertas
 bool alertaTempMotorAtivo = true;
@@ -197,6 +197,7 @@ bool alertaShiftLightAtivo = true;
 
 float alertaTempMotorLimite = 105.0;
 float alertaTensaoMinima = 11.5;
+int alertaShiftLightRPM = 5500;
 
 // Variaveis Dash
 int dashAtual = 0;
@@ -273,6 +274,7 @@ void telaSensorCO2();
 void telaCodigosECU();
 void telaLimparErrosECU();
 void formatarTempoMotor(char* buffer, size_t tamanho, int segundos);
+void desenharLinhaAlertaInt(int y, const char* nome, int valor, const char* unidade, bool selecionado, bool editando);
 std::vector<String> obterFalhasAtivas();
 void salvarConfiguracoes();
 void carregarConfiguracoes();
@@ -428,12 +430,11 @@ void verificarAlertas() {
 
 
   if (alertaTensaoAtivo && voltagem > 0 && voltagem <= alertaTensaoMinima) {
-
     desenharAlertaTela("TENSAO", "BAIXA", ST77XX_ORANGE);
     return;
   }
 
-  if (alertaShiftLightAtivo && shiftLightALDL) {
+  if (alertaShiftLightAtivo && valorRPM >= alertaShiftLightRPM) {
     desenharAlertaTela("SHIFT", "TROCAR MARCHA", ST77XX_YELLOW);
     return;
   }
@@ -1238,7 +1239,9 @@ void dashboardALDL5() {
   char vTempo[16];
   char vECU[8];
 
-  snprintf(vFan, sizeof(vFan), "%s", fanOnALDL ? "ON" : "OFF");
+  bool fanEstimado = tempMotor >= fanEstimadoLimite;
+
+  snprintf(vFan, sizeof(vFan), "%s", fanEstimado ? "ON" : "OFF");
   snprintf(vMotor, sizeof(vMotor), "%s", tempoMotorLigado > 0 ? "ON" : "OFF");
   snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
 
@@ -1246,7 +1249,7 @@ void dashboardALDL5() {
 
   desenharDashboardHeader("DASH 5 - STATUS");
 
-  desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanOnALDL ? ST77XX_GREEN : ST77XX_RED);
+  desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanEstimado ? ST77XX_GREEN : ST77XX_RED);
   desenharCardDash(145, 55, 120, 75, "MOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
 
   desenharCardDash(15, 145, 120, 75, "TEMPO", vTempo, "motor ligado", ST77XX_CYAN);
@@ -2265,6 +2268,7 @@ void salvarConfiguracoes() {
   doc["alertaShiftLightAtivo"] = alertaShiftLightAtivo;
   doc["alertaTempMotorLimite"] = alertaTempMotorLimite;
   doc["alertaTensaoMinima"] = alertaTensaoMinima;
+  doc["alertaShiftLightRPM"] = alertaShiftLightRPM;
 
   serializeJsonPretty(doc, file);
   file.flush();
@@ -2296,6 +2300,7 @@ void carregarConfiguracoes() {
     alertaShiftLightAtivo = doc["alertaShiftLightAtivo"] | true;
     alertaTempMotorLimite = doc["alertaTempMotorLimite"] | 105.0;
     alertaTensaoMinima = doc["alertaTensaoMinima"] | 11.5;
+    alertaShiftLightRPM = doc["alertaShiftLightRPM"] | 5500;
   }
   file.close();
 }
@@ -2514,8 +2519,6 @@ void limparEstadoALDL() {
   velocidade = 0;
   tempoMotorLigado = 0;
   lccpmw = 0;
-  fanOnALDL = false;
-  shiftLightALDL = false;
   errosChecksum = 0;
   ultimaMensagemALDL = 0;
   pacotesRecebidos = 0;
@@ -2661,8 +2664,7 @@ void processarDados(const uint8_t* frame) {
   valorMAP = mapRaw * (5.0f / 255.0f);
   tempoInjecao = ((bpwMsb * 256.0f) + bpwLsb) / 65.536f;
   tempoMotorLigado = timeEng;
-  fanOnALDL = (lccpmw & (1 << 0)) == 0;
-  shiftLightALDL = (lccpmw & (1 << 7)) == 0;
+  //shiftLightALDL = (lccpmw & (1 << 7)) == 0;
 
   ultimaMensagemALDL = millis();
   pacotesRecebidos++;
@@ -3126,7 +3128,7 @@ void telaAlerta() {
   static int ultimaOpcao = -1;
   static bool editandoValor = false;
 
-  const int totalOpcoes = 6;
+  const int totalOpcoes = 7;
 
   if (!iniciado) {
     tft.fillScreen(ST77XX_BLACK);
@@ -3162,6 +3164,12 @@ void telaAlerta() {
           if (alertaTensaoMinima < 9.0) alertaTensaoMinima = 9.0;
           if (alertaTensaoMinima > 13.0) alertaTensaoMinima = 13.0;
           alertaTensaoMinima = round(alertaTensaoMinima * 10.0) / 10.0;
+          break;
+
+        case 5:
+          alertaShiftLightRPM += movimentoEncoder * 100;
+          if (alertaShiftLightRPM < 1500) alertaShiftLightRPM = 1500;
+          if (alertaShiftLightRPM > 7000) alertaShiftLightRPM = 7000;
           break;
       }
 
@@ -3218,6 +3226,13 @@ void telaAlerta() {
         break;
 
       case 5:
+        editandoValor = !editandoValor;
+        salvarConfiguracoes();
+        ultimaOpcao = -1;
+        beep(freqClique);
+        break;
+
+      case 6:
         iniciado = false;
         opcao = 0;
         ultimaOpcao = -1;
@@ -3234,15 +3249,48 @@ void telaAlerta() {
     tft.fillRect(0, 50, 280, 185, ST77XX_BLACK);
 
     desenharLinhaAlertaTexto(55, "Temp motor", alertaTempMotorAtivo ? "ON" : "OFF", opcao == 0, alertaTempMotorAtivo);
-    desenharLinhaAlertaValor(85, "Limite temp", alertaTempMotorLimite, "C", opcao == 1, editandoValor && opcao == 1);
+    desenharLinhaAlertaValor(82, "Limite temp", alertaTempMotorLimite, "C", opcao == 1, editandoValor && opcao == 1);
 
-    desenharLinhaAlertaTexto(115, "Tensao bat", alertaTensaoAtivo ? "ON" : "OFF", opcao == 2, alertaTensaoAtivo);
-    desenharLinhaAlertaValor(145, "Min tensao", alertaTensaoMinima, "V", opcao == 3, editandoValor && opcao == 3);
+    desenharLinhaAlertaTexto(109, "Tensao bat", alertaTensaoAtivo ? "ON" : "OFF", opcao == 2, alertaTensaoAtivo);
+    desenharLinhaAlertaValor(136, "Min tensao", alertaTensaoMinima, "V", opcao == 3, editandoValor && opcao == 3);
 
-    desenharLinhaAlertaTexto(175, "Shift Light", alertaShiftLightAtivo ? "ON" : "OFF", opcao == 4, alertaShiftLightAtivo);
-    desenharLinhaAlertaTexto(205, "Voltar", "", opcao == 5, true);
+    desenharLinhaAlertaTexto(163, "Shift Light", alertaShiftLightAtivo ? "ON" : "OFF", opcao == 4, alertaShiftLightAtivo);
+    desenharLinhaAlertaInt(190, "Shift RPM", alertaShiftLightRPM, "rpm", opcao == 5, editandoValor && opcao == 5);
+
+    desenharLinhaAlertaTexto(217, "Voltar", "", opcao == 6, true);
 
     ultimaOpcao = opcao;
+  }
+}
+
+void desenharLinhaAlertaInt(int y, const char* nome, int valor, const char* unidade, bool selecionado, bool editando) {
+  uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+  uint16_t corValor = editando ? ST77XX_ORANGE : ST77XX_CYAN;
+
+  if (selecionado) {
+    tft.fillRoundRect(8, y - 5, 264, 25, 5, corFundo);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_WHITE, corFundo);
+  tft.setCursor(18, y);
+  tft.print(nome);
+
+  tft.setTextColor(corValor, corFundo);
+  tft.setCursor(180, y);
+  tft.printf("%d", valor);
+
+  tft.setTextSize(1);
+  tft.setTextColor(corValor, corFundo);
+  tft.setCursor(240, y + 7);
+  tft.print(unidade);
+
+  if (editando) {
+    tft.fillRect(0, 232, 280, 10, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+    tft.setCursor(20, 232);
+    tft.print("EDITANDO: gire ajusta 100rpm, clique salva");
   }
 }
 
