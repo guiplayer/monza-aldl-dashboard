@@ -82,6 +82,8 @@
 #define TELA_LIMPAR_ECU       24
 #define TELA_ALERTAS          25
 #define TELA_DASH_DEFAULT     26
+#define TELA_UPLOAD_GIFS      27
+#define TELA_TEMPOS_UI        28
 
 // =======================
 // OBJETOS
@@ -109,6 +111,17 @@ bool otaReiniciarPendente = false;
 unsigned long otaReiniciarEm = 0;
 
 // =======================
+// UPLOAD GIFS VIA AP
+// =======================
+bool gifUploadAtivo = false;
+bool gifUploadErro = false;
+bool gifUploadEmAndamento = false;
+String gifUploadStatusMsg = "Aguardando upload";
+String gifUploadNomeArquivo = "";
+int gifUploadPercent = 0;
+File gifUploadFile;
+
+// =======================
 // SEUS MENUS (MANTIDOS ORIGINAIS)
 // =======================
 struct Menu {
@@ -121,12 +134,12 @@ struct Menu {
 const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Configuracao"};
 const char* submenuSensores[] = {"TPS","MAP","CTS (temp motor)","IAT (temp admissao)","Voltimetro","RPM","Tempo de injecao","CO2 POT","Voltar"};
 const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status MPU","Status BME","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
-const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Update via OTA","Voltar"};
+const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Tempos UI","Update via OTA","Upload Gifs","Voltar"};
 
 Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 4, nullptr };
 Menu menuSensores = { "Sensores", submenuSensores, 9, &menuPrincipal };
 Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 11, &menuPrincipal };
-Menu menuConfig = { "Configuracao", submenuConfig, 8, &menuPrincipal };
+Menu menuConfig = { "Configuracao", submenuConfig, 10, &menuPrincipal };
 
 Menu* menuAtual = &menuPrincipal;
 int menuIndex = 0;
@@ -139,7 +152,7 @@ EstadoUI estadoUI = MENU_UI;
 int telaAtiva = 0;
 int lastCLK = HIGH;
 unsigned long ultimoUpdate = 0;
-const unsigned long INTERVALO_UPDATE = 250;
+unsigned long intervaloUpdateMs = 250;
 static uint16_t lineBuffer[280];
 
 int leituraIluminacao = 0;
@@ -201,6 +214,7 @@ int alertaShiftLightRPM = 5500;
 
 // Variaveis Dash
 int dashAtual = 0;
+int dashInicialDefault = -1; // -1 = nenhum
 const int totalDashboards = 6;
 
 // Nome arquivo json
@@ -231,8 +245,8 @@ bool aldlPrimeiroFrameOk = false;
 
 unsigned long aldlMillisInicioSessao = 0;
 unsigned long aldlUltimoPolling = 0;
-const unsigned long DASHBOARD_UI_UPDATE_MS = 300;
-const unsigned long ALDL_UI_UPDATE_MS = 180;
+unsigned long dashboardUiUpdateMs = 300;
+unsigned long aldlUiUpdateMs = 180;
 
 uint8_t aldlUltimoTx[8];
 size_t aldlUltimoTxLen = 0;
@@ -270,11 +284,18 @@ void telaAjusteBrilho();
 void telaSelecaoGif();
 void telaConfigBuzzer();
 void telaOTA();
+void telaUploadGifs();
+void iniciarUploadGifs();
+void pararUploadGifs();
+void loopUploadGifs();
+void configurarRotasUploadGifs();
+String sanitizarNomeArquivoGif(String nome);
 void telaSensorCO2();
+void telaTemposUI();
+void desenharLinhaTempoUI(int y, const char* nome, unsigned long valor, bool selecionado, bool editando);
 void telaCodigosECU();
 void telaLimparErrosECU();
 void formatarTempoMotor(char* buffer, size_t tamanho, int segundos);
-void desenharLinhaAlertaInt(int y, const char* nome, int valor, const char* unidade, bool selecionado, bool editando);
 std::vector<String> obterFalhasAtivas();
 void salvarConfiguracoes();
 void carregarConfiguracoes();
@@ -285,13 +306,14 @@ int32_t GIFReadFile(GIFFILE *pFile, uint8_t *pBuf, int32_t iLen);
 int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition);
 void GIFDraw(GIFDRAW *pDraw);
 void rodarGifAbertura(String nomeArquivo);
-
 void telaStatusBME();
 void telaStatusMPU();
 void telaAlerta();
 void telaDashDefault();
+bool verificarAlertas();
 void ajustarBacklight();
 void beep(int freq);
+void desenharLinhaAlertaInt(int y, const char* nome, int valor, const char* unidade, bool selecionado, bool editando);
 void desenharLinhaAlertaTexto(int y, const char* nome, const char* valor, bool selecionado, bool ativo);
 void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* unidade, bool selecionado, bool editando);
 
@@ -317,6 +339,7 @@ void iniciarOTA();
 void pararOTA();
 void loopOTA();
 void configurarRotasOTA();
+void pararServidorWebAP();
 
 // TELAS
 bool telaEhSensorALDL(int tela);
@@ -367,7 +390,15 @@ void setup() {
   ajustarBacklight();
 
   beep(freqSucesso);
-  desenharMenu();
+  if (dashInicialDefault >= 0 && dashInicialDefault < totalDashboards) {
+    dashAtual = dashInicialDefault;
+    telaAtiva = TELA_DASHBOARD;
+    estadoUI = TELA_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    atualizarTela();
+  } else {
+    desenharMenu();
+  }
 }
 
 // =======================
@@ -389,14 +420,21 @@ void loop() {
     loopOTA();
   }
 
+  if (estadoUI == TELA_UI && telaAtiva == TELA_UPLOAD_GIFS) {
+    loopUploadGifs();
+  }
+
   ajustarBacklight();
   lerEncoder();
-  
-  if (estadoUI == TELA_UI) {
-    unsigned long intervaloAtual = INTERVALO_UPDATE;
-    if (telaEhSensorALDL(telaAtiva)) intervaloAtual = ALDL_UI_UPDATE_MS;
-    if (telaAtiva == TELA_DASHBOARD) intervaloAtual = DASHBOARD_UI_UPDATE_MS;
-    if (telaAtiva == TELA_OTA) intervaloAtual = 250;
+
+  bool alertaAtivo = verificarAlertas();
+
+  if (!alertaAtivo && estadoUI == TELA_UI) {
+    unsigned long intervaloAtual = intervaloUpdateMs;
+
+    if (telaEhSensorALDL(telaAtiva)) intervaloAtual = aldlUiUpdateMs;
+    if (telaAtiva == TELA_DASHBOARD) intervaloAtual = dashboardUiUpdateMs;
+    if (telaAtiva == TELA_OTA || telaAtiva == TELA_UPLOAD_GIFS) intervaloAtual = 250;    
 
     if (millis() - ultimoUpdate >= intervaloAtual || movimentoEncoder != 0) {
       ultimoUpdate = millis();
@@ -404,40 +442,38 @@ void loop() {
     }
   }
 
-  verificarAlertas();
-
   delay(1);
 }
 
-void verificarAlertas() {
-  if (estadoUI != TELA_UI) return;
-  if (!telaEhSensorALDL(telaAtiva)) return;
-
+bool verificarAlertas() {
+  if (estadoUI != TELA_UI) return false;
+  if (!telaEhSensorALDL(telaAtiva)) return false;
 
   // Nao dispara alerta antes do primeiro frame valido
-  if (!aldlPrimeiroFrameOk) return;
-  if (!aldlTemFrameValido) return;
-  if (pacotesRecebidos <= 0) return;
+  if (!aldlPrimeiroFrameOk) return false;
+  if (!aldlTemFrameValido) return false;
+  if (pacotesRecebidos <= 0) return false;
 
   // Garante que a ECU ainda esta viva
   ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
-  if (!ecuConectada) return;
+  if (!ecuConectada) return false;
 
   if (alertaTempMotorAtivo && tempMotor >= alertaTempMotorLimite) {
     desenharAlertaTela("TEMP MOTOR", "ALTA", ST77XX_RED);
-    return;
+    return true;
   }
-
 
   if (alertaTensaoAtivo && voltagem > 0 && voltagem <= alertaTensaoMinima) {
     desenharAlertaTela("TENSAO", "BAIXA", ST77XX_ORANGE);
-    return;
+    return true;
   }
 
   if (alertaShiftLightAtivo && valorRPM >= alertaShiftLightRPM) {
     desenharAlertaTela("SHIFT", "TROCAR MARCHA", ST77XX_YELLOW);
-    return;
+    return true;
   }
+
+  return false;
 }
 
 void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFundo) {
@@ -473,8 +509,8 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
   ultimoDesenho = millis();
   alertaDesenhado = true;
 
-  tft.fillRect(0, 45, 280, 150, corFundo);
-  tft.drawRoundRect(10, 55, 260, 125, 8, ST77XX_WHITE);
+  tft.fillScreen(corFundo);
+  tft.drawRoundRect(10, 45, 260, 150, 8, ST77XX_WHITE);
 
   tft.setTextWrap(false);
 
@@ -581,6 +617,8 @@ void lerEncoder() {
       telaAtiva != TELA_TESTE_ELET &&
       telaAtiva != TELA_ALERTAS &&
       telaAtiva != TELA_TESTE_DISPLAY &&
+      telaAtiva != TELA_UPLOAD_GIFS &&
+      telaAtiva != TELA_TEMPOS_UI &&
       telaAtiva != TELA_DASH_DEFAULT) {
 
       estadoUI = MENU_UI;
@@ -658,7 +696,9 @@ void selecionarItemMenu() {
     else if (menuIndex == 3) { telaAtiva = TELA_AJUSTE_BRILHO; estadoUI = TELA_UI; }
     else if (menuIndex == 4) { telaAtiva = TELA_DASH_DEFAULT; estadoUI = TELA_UI; }
     else if (menuIndex == 5) { telaAtiva = TELA_CONFIG_BUZZER; estadoUI = TELA_UI; }
-    else if (menuIndex == 6) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
+    else if (menuIndex == 6) { telaAtiva = TELA_TEMPOS_UI; estadoUI = TELA_UI; }
+    else if (menuIndex == 7) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
+    else if (menuIndex == 8) { telaAtiva = TELA_UPLOAD_GIFS; estadoUI = TELA_UI; }
   }
 
   if (estadoUI == MENU_UI) {
@@ -669,6 +709,10 @@ void selecionarItemMenu() {
     
     if (telaAtiva == TELA_OTA) {
       iniciarOTA();
+    }
+
+    if (telaAtiva == TELA_UPLOAD_GIFS) {
+      iniciarUploadGifs();
     }
   }
 
@@ -705,6 +749,9 @@ void atualizarTela() {
     case TELA_CODIGOS_ECU:    telaCodigosECU(); break;
     case TELA_LIMPAR_ECU: telaLimparErrosECU(); break;
     case TELA_ALERTAS: telaAlerta(); break;
+    case TELA_DASH_DEFAULT: telaDashDefault(); break;
+    case TELA_UPLOAD_GIFS: telaUploadGifs(); break;
+    case TELA_TEMPOS_UI: telaTemposUI(); break;
   }
 }
 
@@ -2130,6 +2177,165 @@ void telaOTA() {
 // TELAS DE CONFIGURAÇÃO
 // ======================================================
 
+void telaTemposUI() {
+  static bool iniciado = false;
+  static int opcao = 0;
+  static int ultimaOpcao = -1;
+  static bool editando = false;
+  static bool precisaRedesenhar = true;
+
+  const int totalOpcoes = 4;
+
+  if (!iniciado) {
+    tft.fillScreen(ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(65, 15);
+    tft.print("TEMPOS UI");
+    tft.drawFastHLine(30, 35, 220, ST77XX_GREY);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(15, 240);
+    tft.print("Gire: navega/ajusta | Clique: seleciona");
+
+    iniciado = true;
+    opcao = 0;
+    ultimaOpcao = -1;
+    editando = false;
+    precisaRedesenhar = true;
+  }
+
+  if (movimentoEncoder != 0) {
+    if (editando) {
+      unsigned long passo = 10;
+
+      if (opcao == 0) {
+        long novoValor = (long)intervaloUpdateMs + (movimentoEncoder * passo);
+        if (novoValor < 50) novoValor = 50;
+        if (novoValor > 2000) novoValor = 2000;
+        intervaloUpdateMs = (unsigned long)novoValor;
+      }
+
+      else if (opcao == 1) {
+        long novoValor = (long)dashboardUiUpdateMs + (movimentoEncoder * passo);
+        if (novoValor < 50) novoValor = 50;
+        if (novoValor > 2000) novoValor = 2000;
+        dashboardUiUpdateMs = (unsigned long)novoValor;
+      }
+
+      else if (opcao == 2) {
+        long novoValor = (long)aldlUiUpdateMs + (movimentoEncoder * passo);
+        if (novoValor < 50) novoValor = 50;
+        if (novoValor > 2000) novoValor = 2000;
+        aldlUiUpdateMs = (unsigned long)novoValor;
+      }
+    } else {
+      opcao += movimentoEncoder;
+
+      if (opcao < 0) opcao = totalOpcoes - 1;
+      if (opcao >= totalOpcoes) opcao = 0;
+    }
+
+    movimentoEncoder = 0;
+    precisaRedesenhar = true;
+    beep(freqEncoder);
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    switch (opcao) {
+      case 0:
+      case 1:
+      case 2:
+        editando = !editando;
+
+        if (!editando) {
+          salvarConfiguracoes();
+          beep(freqSucesso);
+        } else {
+          beep(freqClique);
+        }
+
+        precisaRedesenhar = true;
+        break;
+
+      case 3:
+        salvarConfiguracoes();
+
+        iniciado = false;
+        opcao = 0;
+        ultimaOpcao = -1;
+        editando = false;
+        precisaRedesenhar = true;
+
+        estadoUI = MENU_UI;
+        tft.fillScreen(ST77XX_BLACK);
+        desenharMenu();
+        beep(freqClique);
+        return;
+    }
+  }
+
+  if (precisaRedesenhar || ultimaOpcao != opcao) {
+    tft.fillRect(0, 55, 280, 175, ST77XX_BLACK);
+
+    desenharLinhaTempoUI(65, "Padrao", intervaloUpdateMs, opcao == 0, editando && opcao == 0);
+    desenharLinhaTempoUI(105, "Dashboard", dashboardUiUpdateMs, opcao == 1, editando && opcao == 1);
+    desenharLinhaTempoUI(145, "ALDL UI", aldlUiUpdateMs, opcao == 2, editando && opcao == 2);
+
+    bool selecionadoVoltar = opcao == 3;
+    uint16_t corFundo = selecionadoVoltar ? ST77XX_BLUE : ST77XX_BLACK;
+
+    if (selecionadoVoltar) {
+      tft.fillRoundRect(8, 185, 264, 28, 5, corFundo);
+    }
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_WHITE, corFundo);
+    tft.setCursor(18, 190);
+    tft.print("Voltar");
+
+    if (editando) {
+      tft.fillRect(0, 222, 280, 12, ST77XX_BLACK);
+      tft.setTextSize(1);
+      tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+      tft.setCursor(20, 222);
+      tft.print("EDITANDO: passo 10ms, clique salva");
+    } else {
+      tft.fillRect(0, 222, 280, 12, ST77XX_BLACK);
+    }
+
+    ultimaOpcao = opcao;
+    precisaRedesenhar = false;
+  }
+}
+
+void desenharLinhaTempoUI(int y, const char* nome, unsigned long valor, bool selecionado, bool editando) {
+  uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+  uint16_t corValor = editando ? ST77XX_ORANGE : ST77XX_CYAN;
+
+  if (selecionado) {
+    tft.fillRoundRect(8, y - 6, 264, 30, 5, corFundo);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_WHITE, corFundo);
+  tft.setCursor(18, y);
+  tft.print(nome);
+
+  tft.setTextColor(corValor, corFundo);
+  tft.setCursor(170, y);
+  tft.printf("%lu", valor);
+
+  tft.setTextSize(1);
+  tft.setTextColor(corValor, corFundo);
+  tft.setCursor(235, y + 7);
+  tft.print("ms");
+}
+
 void telaAjusteBrilho() {
   static bool iniciado = false;
   static int passoBrilho = 0;
@@ -2263,12 +2469,19 @@ void salvarConfiguracoes() {
   doc["fErr"] = freqErro;
   doc["modoBuzzer"] = modoBuzzer;
   doc["aldlPollingMs"] = aldlPollingMs;
+
+  doc["dashInicialDefault"] = dashInicialDefault;
+
   doc["alertaTempMotorAtivo"] = alertaTempMotorAtivo;
   doc["alertaTensaoAtivo"] = alertaTensaoAtivo;
   doc["alertaShiftLightAtivo"] = alertaShiftLightAtivo;
   doc["alertaTempMotorLimite"] = alertaTempMotorLimite;
   doc["alertaTensaoMinima"] = alertaTensaoMinima;
   doc["alertaShiftLightRPM"] = alertaShiftLightRPM;
+
+  doc["intervaloUpdateMs"] = intervaloUpdateMs;
+  doc["dashboardUiUpdateMs"] = dashboardUiUpdateMs;
+  doc["aldlUiUpdateMs"] = aldlUiUpdateMs;
 
   serializeJsonPretty(doc, file);
   file.flush();
@@ -2301,7 +2514,25 @@ void carregarConfiguracoes() {
     alertaTempMotorLimite = doc["alertaTempMotorLimite"] | 105.0;
     alertaTensaoMinima = doc["alertaTensaoMinima"] | 11.5;
     alertaShiftLightRPM = doc["alertaShiftLightRPM"] | 5500;
+
+    dashInicialDefault = doc["dashInicialDefault"] | -1;
+
+    intervaloUpdateMs = doc["intervaloUpdateMs"] | 250;
+    dashboardUiUpdateMs = doc["dashboardUiUpdateMs"] | 300;
+    aldlUiUpdateMs = doc["aldlUiUpdateMs"] | 180;
   }
+  if (dashInicialDefault < -1) dashInicialDefault = -1;
+  if (dashInicialDefault >= totalDashboards) dashInicialDefault = -1;
+
+  if (intervaloUpdateMs < 50) intervaloUpdateMs = 50;
+  if (intervaloUpdateMs > 2000) intervaloUpdateMs = 2000;
+
+  if (dashboardUiUpdateMs < 50) dashboardUiUpdateMs = 50;
+  if (dashboardUiUpdateMs > 2000) dashboardUiUpdateMs = 2000;
+
+  if (aldlUiUpdateMs < 50) aldlUiUpdateMs = 50;
+  if (aldlUiUpdateMs > 2000) aldlUiUpdateMs = 2000;
+
   file.close();
 }
 
@@ -2845,7 +3076,7 @@ void configurarRotasOTA() {
 }
 
 void iniciarOTA() {
-  pararOTA();
+  pararServidorWebAP();
 
   WiFi.mode(WIFI_AP);
   bool ok = WiFi.softAP(otaSSID.c_str(), otaSenha.c_str());
@@ -2866,19 +3097,34 @@ void iniciarOTA() {
   }
 }
 
-void pararOTA() {
-  if (otaAtivo) {
-    otaServer.stop();
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
+void pararServidorWebAP() {
+  if (gifUploadFile) {
+    gifUploadFile.close();
   }
 
+  otaServer.stop();
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+
   otaAtivo = false;
+  gifUploadAtivo = false;
+  gifUploadErro = false;
+
   otaUploadEmAndamento = false;
   otaReiniciarPendente = false;
   otaStatusMsg = "Aguardando upload";
   otaPercent = 0;
+
+  gifUploadEmAndamento = false;
+  gifUploadStatusMsg = "Aguardando upload";
+  gifUploadNomeArquivo = "";
+  gifUploadPercent = 0;
+
   otaIP = "";
+}
+
+void pararOTA() {
+  pararServidorWebAP();
 }
 
 void loopOTA() {
@@ -2892,8 +3138,358 @@ void loopOTA() {
 }
 
 // ======================================================
+// FUNCOES GIF
+// ======================================================
+String sanitizarNomeArquivoGif(String nome) {
+  nome.replace("\\", "/");
+
+  int barra = nome.lastIndexOf('/');
+  if (barra >= 0) {
+    nome = nome.substring(barra + 1);
+  }
+
+  nome.trim();
+  nome.toLowerCase();
+
+  nome.replace(" ", "_");
+  nome.replace("á", "a");
+  nome.replace("à", "a");
+  nome.replace("ã", "a");
+  nome.replace("â", "a");
+  nome.replace("é", "e");
+  nome.replace("ê", "e");
+  nome.replace("í", "i");
+  nome.replace("ó", "o");
+  nome.replace("ô", "o");
+  nome.replace("õ", "o");
+  nome.replace("ú", "u");
+  nome.replace("ç", "c");
+
+  String limpo = "";
+
+  for (int i = 0; i < nome.length(); i++) {
+    char c = nome[i];
+
+    bool permitido =
+      (c >= 'a' && c <= 'z') ||
+      (c >= '0' && c <= '9') ||
+      c == '_' ||
+      c == '-' ||
+      c == '.';
+
+    if (permitido) {
+      limpo += c;
+    }
+  }
+
+  if (!limpo.endsWith(".gif")) {
+    limpo += ".gif";
+  }
+
+  if (limpo.length() < 5) {
+    limpo = "upload.gif";
+  }
+
+  return "/" + limpo;
+}
+
+void configurarRotasUploadGifs() {
+  otaServer.on("/", HTTP_GET, []() {
+    String html;
+    html += "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<title>Monza Dash - Upload GIFs</title>";
+    html += "</head><body style='font-family:Arial;background:#111;color:#eee;padding:20px'>";
+    html += "<h2>Monza Dash - Upload GIFs</h2>";
+    html += "<p>Use GIF .gif em 280x240. Evite arquivos muito grandes.</p>";
+    html += "<p>Depois voce pode selecionar o GIF em Configuracao &gt; GIF abertura.</p>";
+    html += "<form method='POST' action='/uploadgif' enctype='multipart/form-data'>";
+    html += "<input type='file' name='gif' accept='.gif,image/gif'><br><br>";
+    html += "<input type='submit' value='Enviar GIF'>";
+    html += "</form>";
+    html += "<hr>";
+    html += "<p>Status atual: " + gifUploadStatusMsg + "</p>";
+    html += "<p>Arquivo: " + gifUploadNomeArquivo + "</p>";
+    html += "<p><a style='color:#6cf' href='/listar'>Listar GIFs no SD</a></p>";
+    html += "</body></html>";
+
+    otaServer.send(200, "text/html", html);
+  });
+
+  otaServer.on("/listar", HTTP_GET, []() {
+    String html;
+    html += "<!DOCTYPE html><html><head><meta charset='utf-8'>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<title>GIFs no SD</title>";
+    html += "</head><body style='font-family:Arial;background:#111;color:#eee;padding:20px'>";
+    html += "<h2>GIFs no SD</h2>";
+    html += "<ul>";
+
+    File root = SD.open("/");
+    if (root) {
+      File file = root.openNextFile();
+
+      while (file) {
+        String nome = String(file.name());
+        String nomeLower = nome;
+        nomeLower.toLowerCase();
+
+        if (!file.isDirectory() && nomeLower.endsWith(".gif")) {
+          html += "<li>";
+          html += nome;
+          html += " - ";
+          html += String(file.size());
+          html += " bytes";
+          html += "</li>";
+        }
+
+        file.close();
+        file = root.openNextFile();
+      }
+
+      root.close();
+    }
+
+    html += "</ul>";
+    html += "<p><a style='color:#6cf' href='/'>Voltar</a></p>";
+    html += "</body></html>";
+
+    otaServer.send(200, "text/html", html);
+  });
+
+  otaServer.on("/uploadgif", HTTP_POST,
+    []() {
+      bool ok = !gifUploadErro && !gifUploadEmAndamento && gifUploadNomeArquivo.length() > 0;
+
+      otaServer.sendHeader("Connection", "close");
+
+      String resposta = ok
+        ? "Upload concluido: " + gifUploadNomeArquivo
+        : "Falha no upload do GIF";
+
+      otaServer.send(200, "text/plain", resposta);
+
+      if (ok) {
+        gifUploadStatusMsg = "Upload concluido";
+        gifUploadPercent = 100;
+      } else {
+        gifUploadStatusMsg = "Erro no upload";
+      }
+    },
+    []() {
+      HTTPUpload& upload = otaServer.upload();
+
+      if (upload.status == UPLOAD_FILE_START) {
+        gifUploadEmAndamento = true;
+        gifUploadPercent = 0;
+        gifUploadStatusMsg = "Iniciando";
+        gifUploadNomeArquivo = sanitizarNomeArquivoGif(upload.filename);
+
+        if (!SD.begin(SD_CS)) {
+          gifUploadStatusMsg = "SD nao iniciado";
+          gifUploadEmAndamento = false;
+          gifUploadErro = true;
+          gifUploadNomeArquivo = "";
+          return;
+        }
+
+        if (SD.exists(gifUploadNomeArquivo)) {
+          SD.remove(gifUploadNomeArquivo);
+        }
+
+        gifUploadFile = SD.open(gifUploadNomeArquivo, FILE_WRITE);
+
+        if (!gifUploadFile) {
+          gifUploadStatusMsg = "Erro criando arquivo";
+          gifUploadEmAndamento = false;
+          gifUploadErro = true;
+          gifUploadNomeArquivo = "";
+          return;
+        }
+      }
+
+      else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (!gifUploadFile) {
+          gifUploadStatusMsg = "Arquivo invalido";
+          gifUploadErro = true;
+          return;
+        }
+
+        size_t escrito = gifUploadFile.write(upload.buf, upload.currentSize);
+
+        if (escrito != upload.currentSize) {
+          gifUploadStatusMsg = "Erro gravando SD";
+          gifUploadErro = true;
+        } else {
+          gifUploadStatusMsg = "Gravando GIF";
+          gifUploadPercent = 50;
+        }
+      }
+      else if (upload.status == UPLOAD_FILE_END) {
+        if (gifUploadFile) {
+          gifUploadFile.close();
+        }
+
+        gifUploadEmAndamento = false;
+
+        if (!gifUploadErro) {
+          gifUploadPercent = 100;
+          gifUploadStatusMsg = "Upload finalizado";
+        } else {
+          gifUploadPercent = 0;
+          gifUploadStatusMsg = "Erro no upload";
+        }
+      }
+
+      else if (upload.status == UPLOAD_FILE_ABORTED) {
+        if (gifUploadFile) {
+          gifUploadFile.close();
+        }
+
+        if (gifUploadNomeArquivo.length() > 0 && SD.exists(gifUploadNomeArquivo)) {
+          SD.remove(gifUploadNomeArquivo);
+        }
+
+        gifUploadPercent = 0;
+        gifUploadStatusMsg = "Upload cancelado";
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+      }
+    }
+  );
+}
+
+void iniciarUploadGifs() {
+  pararServidorWebAP();
+
+  WiFi.mode(WIFI_AP);
+  bool ok = WiFi.softAP(otaSSID.c_str(), otaSenha.c_str());
+
+  if (ok) {
+    IPAddress ip = WiFi.softAPIP();
+    otaIP = ip.toString();
+
+    gifUploadStatusMsg = "AP iniciado";
+    gifUploadNomeArquivo = "";
+    gifUploadPercent = 0;
+    gifUploadEmAndamento = false;
+    gifUploadErro = false;
+
+    configurarRotasUploadGifs();
+    otaServer.begin();
+    gifUploadAtivo = true;
+  } else {
+    otaIP = "0.0.0.0";
+    gifUploadStatusMsg = "Falha ao iniciar AP";
+    gifUploadAtivo = false;
+  }
+}
+
+void pararUploadGifs() {
+  pararServidorWebAP();
+}
+
+void loopUploadGifs() {
+  if (gifUploadAtivo) {
+    otaServer.handleClient();
+  }
+}
+
+// ======================================================
 // OUTRAS FUNCOES
 // ======================================================
+void telaUploadGifs() {
+  static bool iniciado = false;
+  static String ultimoStatus = "";
+  static int ultimoPercent = -1;
+  static String ultimoIP = "";
+
+  if (!iniciado) {
+    tft.fillScreen(ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(55, 15);
+    tft.print("UPLOAD GIFS");
+    tft.drawFastHLine(30, 35, 220, ST77XX_GREY);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(30, 240);
+    tft.print("Acesse pelo navegador | Clique sai");
+
+    iniciado = true;
+    ultimoStatus = "";
+    ultimoPercent = -1;
+    ultimoIP = "";
+  }
+
+  if (ultimoIP != otaIP) {
+    tft.fillRect(0, 55, 280, 30, ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(25, 60);
+    tft.print("IP:");
+    tft.setCursor(70, 60);
+    tft.print(otaIP);
+
+    ultimoIP = otaIP;
+  }
+
+  if (ultimoStatus != gifUploadStatusMsg || ultimoPercent != gifUploadPercent) {
+    tft.fillRect(0, 100, 280, 100, ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(20, 105);
+    tft.print("Status:");
+
+    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+    tft.setCursor(20, 130);
+    tft.print(gifUploadStatusMsg);
+
+    if (gifUploadNomeArquivo.length() > 0) {
+      tft.setTextSize(1);
+      tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+      tft.setCursor(20, 158);
+      tft.print("Arquivo: ");
+      tft.print(gifUploadNomeArquivo);
+    }
+
+    tft.drawRect(20, 180, 240, 16, ST77XX_CYAN);
+
+    int largura = map(gifUploadPercent, 0, 100, 0, 236);
+    if (largura < 0) largura = 0;
+    if (largura > 236) largura = 236;
+
+    tft.fillRect(22, 182, largura, 12, ST77XX_GREEN);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(120, 202);
+    tft.printf("%d%%", gifUploadPercent);
+
+    ultimoStatus = gifUploadStatusMsg;
+    ultimoPercent = gifUploadPercent;
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    iniciado = false;
+    ultimoStatus = "";
+    ultimoPercent = -1;
+    ultimoIP = "";
+
+    pararUploadGifs();
+
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
+  }
+}
 
 void telaStatusBME() {
   static bool iniciado = false;
@@ -3122,12 +3718,145 @@ void telaStatusMPU() {
   }
 }
 
+void telaDashDefault() {
+  static bool iniciado = false;
+  static int opcao = 0;
+  static int ultimaOpcao = -1;
+
+  const int totalOpcoes = totalDashboards + 1;
+
+  const char* nomesDash[totalDashboards] = {
+    "Ambiente",
+    "Motor",
+    "Sensores",
+    "ECU",
+    "Custom",
+    "Status"
+  };
+
+  if (!iniciado) {
+    tft.fillScreen(ST77XX_BLACK);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(45, 15);
+    tft.print("DASH INICIAL");
+    tft.drawFastHLine(30, 35, 220, ST77XX_GREY);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(20, 240);
+    tft.print("Gire: escolher | Clique: salvar");
+
+    // -1 vira opcao 0 = Nenhum
+    //  0 vira opcao 1 = Dash 1
+    //  1 vira opcao 2 = Dash 2...
+    opcao = dashInicialDefault + 1;
+
+    if (opcao < 0) opcao = 0;
+    if (opcao >= totalOpcoes) opcao = 0;
+
+    ultimaOpcao = -1;
+    iniciado = true;
+  }
+
+  if (movimentoEncoder != 0) {
+    opcao += movimentoEncoder;
+
+    if (opcao < 0) {
+      opcao = totalOpcoes - 1;
+    }
+
+    if (opcao >= totalOpcoes) {
+      opcao = 0;
+    }
+
+    movimentoEncoder = 0;
+    ultimaOpcao = -1;
+    beep(freqEncoder);
+  }
+
+  if (ultimaOpcao != opcao) {
+    tft.fillRect(0, 50, 280, 180, ST77XX_BLACK);
+
+    for (int i = 0; i < totalOpcoes; i++) {
+      int y = 55 + (i * 25);
+
+      bool selecionado = i == opcao;
+
+      int valorDash = i - 1; // opcao 0 = -1 = Nenhum
+      bool atualDefault = valorDash == dashInicialDefault;
+
+      uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+
+      if (selecionado) {
+        tft.fillRoundRect(8, y - 4, 264, 23, 5, corFundo);
+      }
+
+      tft.setTextSize(2);
+      tft.setTextColor(ST77XX_WHITE, corFundo);
+      tft.setCursor(18, y);
+
+      if (i == 0) {
+        tft.print("Nenhum");
+      } else {
+        tft.printf("Dash %d", i);
+      }
+
+      tft.setTextSize(1);
+
+      if (i == 0) {
+        tft.setTextColor(selecionado ? ST77XX_YELLOW : ST77XX_GREY, corFundo);
+        tft.setCursor(115, y + 6);
+        tft.print("abrir menu");
+      } else {
+        tft.setTextColor(selecionado ? ST77XX_YELLOW : ST77XX_CYAN, corFundo);
+        tft.setCursor(105, y + 6);
+        tft.print(nomesDash[i - 1]);
+      }
+
+      if (atualDefault) {
+        tft.setTextColor(ST77XX_GREEN, corFundo);
+        tft.setCursor(220, y + 6);
+        tft.print("ATUAL");
+      }
+    }
+
+    ultimaOpcao = opcao;
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    dashInicialDefault = opcao - 1;
+
+    if (dashInicialDefault < -1) {
+      dashInicialDefault = -1;
+    }
+
+    if (dashInicialDefault >= totalDashboards) {
+      dashInicialDefault = -1;
+    }
+
+    salvarConfiguracoes();
+
+    iniciado = false;
+    ultimaOpcao = -1;
+
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqSucesso);
+  }
+}
+
 void telaAlerta() {
   static bool iniciado = false;
   static int opcao = 0;
   static int ultimaOpcao = -1;
   static bool editandoValor = false;
-
+  static bool precisaRedesenhar = true;
+  
   const int totalOpcoes = 7;
 
   if (!iniciado) {
@@ -3148,6 +3877,7 @@ void telaAlerta() {
     opcao = 0;
     ultimaOpcao = -1;
     editandoValor = false;
+    precisaRedesenhar = true;
   }
 
   if (movimentoEncoder != 0) {
@@ -3172,8 +3902,6 @@ void telaAlerta() {
           if (alertaShiftLightRPM > 7000) alertaShiftLightRPM = 7000;
           break;
       }
-
-      salvarConfiguracoes();
     } else {
       opcao += movimentoEncoder;
 
@@ -3182,7 +3910,7 @@ void telaAlerta() {
     }
 
     movimentoEncoder = 0;
-    ultimaOpcao = -1;
+    precisaRedesenhar = true;
     beep(freqEncoder);
   }
 
@@ -3193,49 +3921,68 @@ void telaAlerta() {
       case 0:
         alertaTempMotorAtivo = !alertaTempMotorAtivo;
         salvarConfiguracoes();
-        ultimaOpcao = -1;
+        precisaRedesenhar = true;
         beep(freqSucesso);
         break;
 
       case 1:
         editandoValor = !editandoValor;
-        salvarConfiguracoes();
-        ultimaOpcao = -1;
-        beep(freqClique);
+
+        if (!editandoValor) {
+          salvarConfiguracoes();
+          beep(freqSucesso);
+        } else {
+          beep(freqClique);
+        }
+
+        precisaRedesenhar = true;
         break;
 
       case 2:
         alertaTensaoAtivo = !alertaTensaoAtivo;
         salvarConfiguracoes();
-        ultimaOpcao = -1;
+        precisaRedesenhar = true;
         beep(freqSucesso);
         break;
 
       case 3:
         editandoValor = !editandoValor;
-        salvarConfiguracoes();
-        ultimaOpcao = -1;
-        beep(freqClique);
+
+        if (!editandoValor) {
+          salvarConfiguracoes();
+          beep(freqSucesso);
+        } else {
+          beep(freqClique);
+        }
+
+        precisaRedesenhar = true;
         break;
 
       case 4:
         alertaShiftLightAtivo = !alertaShiftLightAtivo;
         salvarConfiguracoes();
-        ultimaOpcao = -1;
+        precisaRedesenhar = true;
         beep(freqSucesso);
         break;
 
       case 5:
         editandoValor = !editandoValor;
-        salvarConfiguracoes();
-        ultimaOpcao = -1;
-        beep(freqClique);
+
+        if (!editandoValor) {
+          salvarConfiguracoes();
+          beep(freqSucesso);
+        } else {
+          beep(freqClique);
+        }
+
+        precisaRedesenhar = true;
         break;
 
       case 6:
         iniciado = false;
         opcao = 0;
         ultimaOpcao = -1;
+        precisaRedesenhar = true;
         editandoValor = false;
         estadoUI = MENU_UI;
         tft.fillScreen(ST77XX_BLACK);
@@ -3245,7 +3992,7 @@ void telaAlerta() {
     }
   }
 
-  if (ultimaOpcao != opcao || editandoValor) {
+  if (precisaRedesenhar || ultimaOpcao != opcao) {
     tft.fillRect(0, 50, 280, 185, ST77XX_BLACK);
 
     desenharLinhaAlertaTexto(55, "Temp motor", alertaTempMotorAtivo ? "ON" : "OFF", opcao == 0, alertaTempMotorAtivo);
@@ -3260,6 +4007,7 @@ void telaAlerta() {
     desenharLinhaAlertaTexto(217, "Voltar", "", opcao == 6, true);
 
     ultimaOpcao = opcao;
+    precisaRedesenhar = false;
   }
 }
 
