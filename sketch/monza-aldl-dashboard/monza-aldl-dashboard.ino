@@ -530,8 +530,14 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
   ultimoDesenho = millis();
   alertaDesenhado = true;
 
+  uint16_t corTexto = ST77XX_WHITE;
+
+  if (corFundo == ST77XX_YELLOW || corFundo == ST77XX_ORANGE || corFundo == ST77XX_CYAN) {
+    corTexto = ST77XX_BLACK;
+  }
+
   tft.fillScreen(corFundo);
-  tft.drawRoundRect(10, 45, 260, 150, 8, ST77XX_WHITE);
+  tft.drawRoundRect(10, 45, 260, 150, 8, corTexto);
 
   tft.setTextWrap(false);
 
