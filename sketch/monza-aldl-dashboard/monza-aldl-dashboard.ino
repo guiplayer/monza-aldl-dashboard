@@ -212,6 +212,9 @@ float alertaTempMotorLimite = 105.0;
 float alertaTensaoMinima = 11.5;
 int alertaShiftLightRPM = 5500;
 
+bool alertaEstavaAtivo = false;
+bool forcarRedesenhoTela = false;
+
 // Variaveis Dash
 int dashAtual = 0;
 int dashInicialDefault = -1; // -1 = nenhum
@@ -429,6 +432,17 @@ void loop() {
 
   bool alertaAtivo = verificarAlertas();
 
+  if (!alertaAtivo && alertaEstavaAtivo) {
+    alertaEstavaAtivo = false;
+    forcarRedesenhoTela = true;
+    tft.fillScreen(ST77XX_BLACK);
+    ultimoUpdate = 0;
+  }
+
+  if (alertaAtivo) {
+    alertaEstavaAtivo = true;
+  }
+
   if (!alertaAtivo && estadoUI == TELA_UI) {
     unsigned long intervaloAtual = intervaloUpdateMs;
 
@@ -436,9 +450,16 @@ void loop() {
     if (telaAtiva == TELA_DASHBOARD) intervaloAtual = dashboardUiUpdateMs;
     if (telaAtiva == TELA_OTA || telaAtiva == TELA_UPLOAD_GIFS) intervaloAtual = 250;    
 
-    if (millis() - ultimoUpdate >= intervaloAtual || movimentoEncoder != 0) {
+    if (millis() - ultimoUpdate >= intervaloAtual || movimentoEncoder != 0 || forcarRedesenhoTela) {
       ultimoUpdate = millis();
+
+      bool estavaForcandoRedesenho = forcarRedesenhoTela;
+
       atualizarTela();
+
+      if (estavaForcandoRedesenho) {
+        forcarRedesenhoTela = false;
+      }
     }
   }
 
@@ -778,10 +799,11 @@ void telaSensorTPS() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("TPS");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -99999;
   }
 
   if (ultimoValor != valorTPS) {
@@ -814,10 +836,11 @@ void telaSensorMAP() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("MAP");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   float valorTela = round(valorMAP * 100.0f) / 100.0f;
@@ -856,10 +879,11 @@ void telaSensorCTS() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("CTS");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   if (ultimoValor != tempMotor) {
@@ -896,10 +920,11 @@ void telaSensorIAT() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("IAT");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   if (ultimoValor != tempAdmissao) {
@@ -936,10 +961,11 @@ void telaSensorVoltimetro() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("VOLTIMETRO");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   if (ultimoValor != voltagem) {
@@ -976,10 +1002,11 @@ void telaSensorRPM() {
   static bool iniciado = false;
   static int ultimoValor = -99999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("RPM");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -99999;
   }
 
   if (ultimoValor != valorRPM) {
@@ -1012,10 +1039,11 @@ void telaSensorTempoInjecao() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("TEMPO INJECAO");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   if (ultimoValor != tempoInjecao) {
@@ -1053,7 +1081,7 @@ void atualizarDashboard() {
   static bool iniciado = false;
   static int ultimoDash = -1;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
     iniciado = true;
     ultimoDash = -1;
@@ -1570,7 +1598,7 @@ void telaStatusALDL() {
 
   ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
 
     tft.setTextSize(2);
@@ -1817,10 +1845,11 @@ void telaSensorCO2() {
   static bool iniciado = false;
   static float ultimoValor = -9999;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("CO2 POT");
     desenharRodapeSensor();
     iniciado = true;
+    ultimoValor = -9999;
   }
 
   if (ultimoValor != voltCO2) {
@@ -1857,7 +1886,7 @@ void telaCodigosECU() {
   static bool iniciado = false;
   static String cacheFalhas = "";
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
 
     tft.setTextSize(2);
@@ -1930,7 +1959,7 @@ void telaLimparErrosECU() {
   static bool mostrouResultado = false;
   static unsigned long momentoEnvio = 0;
 
-  if (!iniciado) {
+  if (!iniciado || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
 
     tft.setTextSize(2);
