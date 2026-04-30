@@ -542,7 +542,7 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
   tft.setTextWrap(false);
 
   tft.setTextSize(3);
-  tft.setTextColor(ST77XX_WHITE, corFundo);
+  tft.setTextColor(corTexto, corFundo);
 
   int16_t x1, y1;
   uint16_t w, h;
@@ -1236,60 +1236,57 @@ void dashboardALDL1() {
   char vRPM[16];
   char vTPS[16];
   char vMAP[16];
-  char vBAT[16];
+  char vCTS[16];
 
   snprintf(vRPM, sizeof(vRPM), "%d", valorRPM);
   snprintf(vTPS, sizeof(vTPS), "%.1f", valorTPS);
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
-  snprintf(vBAT, sizeof(vBAT), "%.1f", voltagem);
+  snprintf(vCTS, sizeof(vCTS), "%.1f", tempMotor);
 
-  desenharDashboardHeader("DASH 1 - MOTOR");
+  desenharDashboardHeader("DASH 2 - MOTOR");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
-
   desenharCardDash(15, 145, 120, 75, "MAP", vMAP, "V", ST77XX_GREEN);
-  desenharCardDash(145, 145, 120, 75, "BATERIA", vBAT, "V", ST77XX_ORANGE);
+  desenharCardDash(145, 145, 120, 75, "TEMP MOTOR", vCTS, "C", ST77XX_RED);
 }
 
 void dashboardALDL2() {
-  char vCTS[16];
-  char vIAT[16];
+  char vBAT[16];
+  char vVEL[16];
   char vINJ[16];
   char vCO2[16];
 
-  snprintf(vCTS, sizeof(vCTS), "%.1f", tempMotor);
-  snprintf(vIAT, sizeof(vIAT), "%.1f", tempAdmissao);
+  snprintf(vBAT, sizeof(vBAT), "%.1f", voltagem);
+  snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
   snprintf(vINJ, sizeof(vINJ), "%.2f", tempoInjecao);
   snprintf(vCO2, sizeof(vCO2), "%.2f", voltCO2);
 
-  desenharDashboardHeader("DASH 2 - SENSORES");
+  desenharDashboardHeader("DASH 3 - SENSORES");
 
-  desenharCardDash(15, 55, 120, 75, "TEMP MOTOR", vCTS, "C", ST77XX_RED);
-  desenharCardDash(145, 55, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_CYAN);
-
+  desenharCardDash(15, 55, 120, 75, "BATERIA", vBAT, "V", ST77XX_ORANGE);
+  desenharCardDash(145, 55, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_CYAN);
   desenharCardDash(15, 145, 120, 75, "INJECAO", vINJ, "ms", ST77XX_GREEN);
   desenharCardDash(145, 145, 120, 75, "CO2 POT", vCO2, "V", ST77XX_MAGENTA);
 }
 
 void dashboardALDL3() {
-  char vVEL[16];
+  char vIAT[16];  
   char vECU[16];
   char vRX[16];
   char vCHK[16];
 
   ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
-
-  snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
+  
+  snprintf(vIAT, sizeof(vIAT), "%.1f", tempAdmissao);
   snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
   snprintf(vRX, sizeof(vRX), "%d", pacotesRecebidos);
   snprintf(vCHK, sizeof(vCHK), "%d", errosChecksum);
 
-  desenharDashboardHeader("DASH 3 - ECU");
+  desenharDashboardHeader("DASH 4 - ECU");
 
-  desenharCardDash(15, 55, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_CYAN);
+  desenharCardDash(15, 55, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_CYAN);
   desenharCardDash(145, 55, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
-
   desenharCardDash(15, 145, 120, 75, "PACOTES", vRX, "rx", ST77XX_GREEN);
   desenharCardDash(145, 145, 120, 75, "CHECKSUM", vCHK, "erros", ST77XX_ORANGE);
 }
@@ -1305,11 +1302,10 @@ void dashboardALDL4() {
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
   snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
 
-  desenharDashboardHeader("DASH 4 - CUSTOM");
+  desenharDashboardHeader("DASH 5 - CUSTOM");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
-
   desenharCardDash(15, 145, 120, 75, "MAP", vMAP, "V", ST77XX_GREEN);
   desenharCardDash(145, 145, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_ORANGE);
 }
@@ -1328,11 +1324,10 @@ void dashboardALDL5() {
 
   formatarTempoMotor(vTempo, sizeof(vTempo), tempoMotorLigado);
 
-  desenharDashboardHeader("DASH 5 - STATUS");
+  desenharDashboardHeader("DASH 6 - STATUS");
 
   desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanEstimado ? ST77XX_GREEN : ST77XX_RED);
   desenharCardDash(145, 55, 120, 75, "MOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
-
   desenharCardDash(15, 145, 120, 75, "TEMPO", vTempo, "motor ligado", ST77XX_CYAN);
   desenharCardDash(145, 145, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
 }
