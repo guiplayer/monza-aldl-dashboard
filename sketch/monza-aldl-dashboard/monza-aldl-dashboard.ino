@@ -154,6 +154,13 @@ int lastCLK = HIGH;
 unsigned long ultimoUpdate = 0;
 unsigned long intervaloUpdateMs = 250;
 static uint16_t lineBuffer[280];
+uint16_t gifOrigW = 280;
+uint16_t gifOrigH = 240;
+uint16_t gifDrawW = 280;
+uint16_t gifDrawH = 240;
+int16_t gifOffsetX = 0;
+int16_t gifOffsetY = 0;
+bool gifEscalarParaTela = false;
 
 int leituraIluminacao = 0;
 int ajustePasso = 0;
@@ -189,10 +196,13 @@ float tempMotor = 0;
 float valorMAP = 0;
 float voltagem = 0;
 float voltCO2 = 0;
+float valorAvancoIgnicao = 0;
+float valorAFR = 0;
 float tempoInjecao = 0;
 float tempAdmissao = 0;
 int velocidade = 0;
-int tempoMotorLigado = 0;
+int valorIAC = 0;
+uint32_t tempoMotorLigado = 0;
 int errosChecksum = 0;
 unsigned long ultimaMensagemALDL = 0;
 int pacotesRecebidos = 0;
@@ -202,6 +212,27 @@ uint8_t malf2 = 0;
 uint8_t malf3 = 0;
 uint8_t lccpmw = 0;
 float fanEstimadoLimite = 100.0;
+float fanEstimadoLigaLimite = 100.0;
+float fanEstimadoDesligaLimite = 96.0;
+bool fanEstimadoLigada = false;
+uint16_t ecuIdRaw = 0;
+String ecuModuloCodigo = "";
+String ecuModuloNome = "";
+String ecuModuloDescricao = "";
+
+
+// Variaveis Gforce
+float gLateral = 0.0f;
+float gLongitudinal = 0.0f;
+float gVertical = 0.0f;
+float gTotal = 0.0f;
+
+float gOffsetX = 0.0f;
+float gOffsetY = 0.0f;
+float gOffsetZ = 0.0f;
+
+bool gForceCalibrado = false;
+unsigned long gForceUltimaLeitura = 0;
 
 // Variaveis Alertas
 bool alertaTempMotorAtivo = true;
@@ -218,7 +249,26 @@ bool forcarRedesenhoTela = false;
 // Variaveis Dash
 int dashAtual = 0;
 int dashInicialDefault = -1; // -1 = nenhum
-const int totalDashboards = 6;
+const int totalDashboards = 9;
+
+// Cache visual dos dashboards para evitar flicker
+struct CardDashCache {
+  bool usado;
+  int x;
+  int y;
+  int w;
+  int h;
+  char titulo[24];
+  char valor[24];
+  char unidade[18];
+  uint16_t cor;
+};
+
+CardDashCache cacheCardsDash[8];
+
+bool cacheHeaderDashDesenhado = false;
+char cacheHeaderDashTitulo[40] = "";
+int cacheHeaderDashAtual = -1;
 
 // Nome arquivo json
 const char* configFile = "/config.json";
@@ -270,12 +320,16 @@ void atualizarTela();
 void atualizarDashboard();
 void desenharDashboardHeader(const char* titulo);
 void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char* valor, const char* unidade, uint16_t cor);
+void limparCacheDashboard();
+int obterSlotCardDash(int x, int y, int w, int h);
 void dashboardRelogioBME();
 void dashboardALDL1();
 void dashboardALDL2();
 void dashboardALDL3();
 void dashboardALDL4();
 void dashboardALDL5();
+void dashboardALDL6();
+void dashboardALDL7();
 void ajustarHora();
 void telaStatusI2C();
 void telaStatusEletrico();
@@ -293,12 +347,17 @@ void pararUploadGifs();
 void loopUploadGifs();
 void configurarRotasUploadGifs();
 String sanitizarNomeArquivoGif(String nome);
+String htmlEscape(String texto);
+String urlEncode(String texto);
+bool ehArquivoGifSeguro(String caminho);
+bool obterDimensaoGif(String caminho, uint16_t &largura, uint16_t &altura);
+String montarHtmlListaGifs();
 void telaSensorCO2();
 void telaTemposUI();
 void desenharLinhaTempoUI(int y, const char* nome, unsigned long valor, bool selecionado, bool editando);
 void telaCodigosECU();
 void telaLimparErrosECU();
-void formatarTempoMotor(char* buffer, size_t tamanho, int segundos);
+void formatarTempoMotor(char* buffer, size_t tamanho, uint32_t segundos);
 std::vector<String> obterFalhasAtivas();
 void salvarConfiguracoes();
 void carregarConfiguracoes();
@@ -314,11 +373,15 @@ void telaStatusMPU();
 void telaAlerta();
 void telaDashDefault();
 bool verificarAlertas();
+bool atualizarFanEstimado();
 void ajustarBacklight();
 void beep(int freq);
 void desenharLinhaAlertaInt(int y, const char* nome, int valor, const char* unidade, bool selecionado, bool editando);
 void desenharLinhaAlertaTexto(int y, const char* nome, const char* valor, bool selecionado, bool ativo);
 void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* unidade, bool selecionado, bool editando);
+void dashboardGForce();
+void atualizarGForce();
+void calibrarGForce();
 
 // ALDL
 void limparEstadoALDL();
@@ -334,6 +397,20 @@ void removerInicioRx(size_t qtd);
 void descartarEcoDoInicioALDL();
 uint8_t lerPayloadByte(const uint8_t* frame, size_t start);
 void processarDados(const uint8_t* frame);
+struct ModuloECUInfo {
+  uint16_t ecuId;
+  const char* codigo;
+  const char* eprom;
+  const char* gm;
+  const char* veiculo;
+  const char* ano;
+  const char* motor;
+  const char* cambio;
+  const char* combustivel;
+};
+
+ModuloECUInfo identificarModuloECU(uint16_t ecuId);
+String montarDescricaoModuloECU(const ModuloECUInfo& info);
 void processarBufferRecepcaoALDL();
 void loopALDL();
 
@@ -355,6 +432,11 @@ void telaSensorIAT();
 void telaSensorVoltimetro();
 void telaSensorRPM();
 void telaSensorTempoInjecao();
+
+// GIFS
+void prepararEscalaGif(String nomeArquivo);
+void GIFDrawSemEscala(GIFDRAW *pDraw);
+void GIFDrawComEscala(GIFDRAW *pDraw);
 
 // =======================
 // SETUP
@@ -384,6 +466,8 @@ void setup() {
   bme.begin(0x76);
   mpu.begin(0x69);
   rtc.begin();
+
+  calibrarGForce();
 
   pinMode(ENC_CLK, INPUT_PULLUP);
   pinMode(ENC_DT, INPUT_PULLUP);
@@ -495,6 +579,56 @@ bool verificarAlertas() {
   }
 
   return false;
+}
+
+void prepararEscalaGif(String nomeArquivo) {
+  gifOrigW = 280;
+  gifOrigH = 240;
+  gifDrawW = 280;
+  gifDrawH = 240;
+  gifOffsetX = 0;
+  gifOffsetY = 0;
+  gifEscalarParaTela = false;
+
+  uint16_t largura = 0;
+  uint16_t altura = 0;
+
+  if (!obterDimensaoGif(nomeArquivo, largura, altura)) {
+    return;
+  }
+
+  if (largura == 0 || altura == 0) {
+    return;
+  }
+
+  gifOrigW = largura;
+  gifOrigH = altura;
+
+  if (largura <= 280 && altura <= 240) {
+    gifDrawW = largura;
+    gifDrawH = altura;
+    gifOffsetX = 0;
+    gifOffsetY = 0;
+    gifEscalarParaTela = false;
+    return;
+  }
+
+  float escalaX = 280.0f / (float)largura;
+  float escalaY = 240.0f / (float)altura;
+  float escala = escalaX < escalaY ? escalaX : escalaY;
+
+  gifDrawW = (uint16_t)((float)largura * escala);
+  gifDrawH = (uint16_t)((float)altura * escala);
+
+  if (gifDrawW < 1) gifDrawW = 1;
+  if (gifDrawH < 1) gifDrawH = 1;
+  if (gifDrawW > 280) gifDrawW = 280;
+  if (gifDrawH > 240) gifDrawH = 240;
+
+  gifOffsetX = (280 - gifDrawW) / 2;
+  gifOffsetY = (240 - gifDrawH) / 2;
+
+  gifEscalarParaTela = true;
 }
 
 void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFundo) {
@@ -1089,6 +1223,7 @@ void atualizarDashboard() {
 
   if (!iniciado || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
+    limparCacheDashboard();
     iniciado = true;
     ultimoDash = -1;
   }
@@ -1106,6 +1241,7 @@ void atualizarDashboard() {
 
     movimentoEncoder = 0;
     ultimoDash = -1;
+    limparCacheDashboard();
     beep(freqEncoder);
   }
 
@@ -1113,6 +1249,7 @@ void atualizarDashboard() {
     cliqueDetectado = false;
     iniciado = false;
     ultimoDash = -1;
+    limparCacheDashboard();
     estadoUI = MENU_UI;
     tft.fillScreen(ST77XX_BLACK);
     desenharMenu();
@@ -1121,6 +1258,7 @@ void atualizarDashboard() {
 
   if (ultimoDash != dashAtual) {
     tft.fillScreen(ST77XX_BLACK);
+    limparCacheDashboard();
     ultimoDash = dashAtual;
   }
 
@@ -1148,11 +1286,83 @@ void atualizarDashboard() {
     case 5:
       dashboardALDL5();
       break;
+
+    case 6:
+      dashboardALDL6();
+      break;
+
+    case 7:
+      dashboardALDL7();
+      break;
+    
+    case 8:
+      dashboardGForce();
+      break;
   }
 }
 
+void limparCacheDashboard() {
+  for (int i = 0; i < 8; i++) {
+    cacheCardsDash[i].usado = false;
+    cacheCardsDash[i].x = 0;
+    cacheCardsDash[i].y = 0;
+    cacheCardsDash[i].w = 0;
+    cacheCardsDash[i].h = 0;
+    cacheCardsDash[i].titulo[0] = '\0';
+    cacheCardsDash[i].valor[0] = '\0';
+    cacheCardsDash[i].unidade[0] = '\0';
+    cacheCardsDash[i].cor = 0;
+  }
+
+  cacheHeaderDashDesenhado = false;
+  cacheHeaderDashTitulo[0] = '\0';
+  cacheHeaderDashAtual = -1;
+}
+
+int obterSlotCardDash(int x, int y, int w, int h) {
+  for (int i = 0; i < 8; i++) {
+    if (
+      cacheCardsDash[i].usado &&
+      cacheCardsDash[i].x == x &&
+      cacheCardsDash[i].y == y &&
+      cacheCardsDash[i].w == w &&
+      cacheCardsDash[i].h == h
+    ) {
+      return i;
+    }
+  }
+
+  for (int i = 0; i < 8; i++) {
+    if (!cacheCardsDash[i].usado) {
+      cacheCardsDash[i].usado = true;
+      cacheCardsDash[i].x = x;
+      cacheCardsDash[i].y = y;
+      cacheCardsDash[i].w = w;
+      cacheCardsDash[i].h = h;
+      cacheCardsDash[i].titulo[0] = '\0';
+      cacheCardsDash[i].valor[0] = '\0';
+      cacheCardsDash[i].unidade[0] = '\0';
+      cacheCardsDash[i].cor = 0;
+      return i;
+    }
+  }
+
+  return 0;
+}
+
 void desenharDashboardHeader(const char* titulo) {
-  //tft.fillRect(0, 0, 280, 38, ST77XX_BLACK);
+  bool precisaRedesenhar =
+    !cacheHeaderDashDesenhado ||
+    cacheHeaderDashAtual != dashAtual ||
+    strcmp(cacheHeaderDashTitulo, titulo) != 0 ||
+    forcarRedesenhoTela;
+
+  if (!precisaRedesenhar) {
+    return;
+  }
+
+  tft.fillRect(0, 0, 280, 38, ST77XX_BLACK);
+  tft.fillRect(0, 235, 280, 45, ST77XX_BLACK);
 
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
@@ -1172,27 +1382,69 @@ void desenharDashboardHeader(const char* titulo) {
 
   tft.setCursor(226, 240);
   tft.printf("%d/%d", dashAtual + 1, totalDashboards);
+
+  strncpy(cacheHeaderDashTitulo, titulo, sizeof(cacheHeaderDashTitulo) - 1);
+  cacheHeaderDashTitulo[sizeof(cacheHeaderDashTitulo) - 1] = '\0';
+  cacheHeaderDashAtual = dashAtual;
+  cacheHeaderDashDesenhado = true;
 }
 
 void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char* valor, const char* unidade, uint16_t cor) {
-  tft.fillRoundRect(x, y, w, h, 6, ST77XX_BLACK);
-  tft.drawRoundRect(x, y, w, h, 6, cor);
+  int slot = obterSlotCardDash(x, y, w, h);
+  CardDashCache &cache = cacheCardsDash[slot];
 
-  tft.setTextSize(1);
-  tft.setTextColor(cor, ST77XX_BLACK);
-  tft.setCursor(x + 8, y + 8);
-  tft.print(titulo);
+  bool mudouEstrutura =
+    strcmp(cache.titulo, titulo) != 0 ||
+    strcmp(cache.unidade, unidade) != 0 ||
+    cache.cor != cor ||
+    forcarRedesenhoTela;
 
-  tft.setTextSize(3);
-  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.setCursor(x + 8, y + 27);
-  tft.print(valor);
+  bool mudouValor = strcmp(cache.valor, valor) != 0;
 
-  if (strlen(unidade) > 0) {
+  if (!mudouEstrutura && !mudouValor) {
+    return;
+  }
+
+  if (mudouEstrutura) {
+    tft.fillRoundRect(x, y, w, h, 6, ST77XX_BLACK);
+    tft.drawRoundRect(x, y, w, h, 6, cor);
+
     tft.setTextSize(1);
-    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
-    tft.setCursor(x + 8, y + h - 14);
-    tft.print(unidade);
+    tft.setTextColor(cor, ST77XX_BLACK);
+    tft.setCursor(x + 8, y + 8);
+    tft.print(titulo);
+
+    if (strlen(unidade) > 0) {
+      tft.setTextSize(1);
+      tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+      tft.setCursor(x + 8, y + h - 14);
+      tft.print(unidade);
+    }
+
+    strncpy(cache.titulo, titulo, sizeof(cache.titulo) - 1);
+    cache.titulo[sizeof(cache.titulo) - 1] = '\0';
+
+    strncpy(cache.unidade, unidade, sizeof(cache.unidade) - 1);
+    cache.unidade[sizeof(cache.unidade) - 1] = '\0';
+
+    cache.cor = cor;
+
+    // Forca redesenhar o valor depois que recria o card
+    cache.valor[0] = '\0';
+    mudouValor = true;
+  }
+
+  if (mudouValor) {
+    // Apaga somente a área do valor, não o card inteiro
+    tft.fillRect(x + 5, y + 25, w - 10, 30, ST77XX_BLACK);
+
+    tft.setTextSize(3);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.setCursor(x + 8, y + 27);
+    tft.print(valor);
+
+    strncpy(cache.valor, valor, sizeof(cache.valor) - 1);
+    cache.valor[sizeof(cache.valor) - 1] = '\0';
   }
 }
 
@@ -1202,7 +1454,7 @@ void dashboardRelogioBME() {
   float hum = bme.readHumidity();
   float pres = bme.readPressure() / 100.0F;
 
-  desenharDashboardHeader("DASH 1 - AMBIENTE");
+  desenharDashboardHeader("RELÓGIO");
 
   tft.setTextSize(5);
   tft.setTextColor(0x07FF, ST77XX_BLACK);
@@ -1233,6 +1485,35 @@ void dashboardRelogioBME() {
 }
 
 void dashboardALDL1() {
+  char vEcuIdHex[16];
+  char vEcuIdDec[16];
+  char vCodigo[16];
+  char vGm[16];
+
+  snprintf(vEcuIdHex, sizeof(vEcuIdHex), "0x%04X", ecuIdRaw);
+  snprintf(vEcuIdDec, sizeof(vEcuIdDec), "%u", ecuIdRaw);
+  snprintf(vCodigo, sizeof(vCodigo), "%s", ecuModuloCodigo.c_str());
+
+  String gmTela = "";
+
+  if (ecuModuloDescricao.length() > 0 && ecuModuloNome != "Desconhecido") {
+    ModuloECUInfo infoECU = identificarModuloECU(ecuIdRaw);
+    gmTela = String(infoECU.gm);
+  } else {
+    gmTela = "----";
+  }
+
+  snprintf(vGm, sizeof(vGm), "%s", gmTela.c_str());
+
+  desenharDashboardHeader("MODULO");
+
+  desenharCardDash(15, 55, 120, 75, "ID HEX", vEcuIdHex, "", ST77XX_CYAN);
+  desenharCardDash(145, 55, 120, 75, "ID DEC", vEcuIdDec, "", ST77XX_YELLOW);
+  desenharCardDash(15, 145, 120, 75, "CODIGO", vCodigo, "", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "GM", vGm, "", ST77XX_ORANGE);
+}
+
+void dashboardALDL2() {
   char vRPM[16];
   char vTPS[16];
   char vMAP[16];
@@ -1243,7 +1524,7 @@ void dashboardALDL1() {
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
   snprintf(vCTS, sizeof(vCTS), "%.1f", tempMotor);
 
-  desenharDashboardHeader("DASH 2 - MOTOR");
+  desenharDashboardHeader("MOTOR");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
@@ -1251,44 +1532,23 @@ void dashboardALDL1() {
   desenharCardDash(145, 145, 120, 75, "TEMP MOTOR", vCTS, "C", ST77XX_RED);
 }
 
-void dashboardALDL2() {
+void dashboardALDL3() {
   char vBAT[16];
   char vVEL[16];
-  char vINJ[16];
+  char vIAC[16];
   char vCO2[16];
 
   snprintf(vBAT, sizeof(vBAT), "%.1f", voltagem);
   snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
-  snprintf(vINJ, sizeof(vINJ), "%.2f", tempoInjecao);
+  snprintf(vIAC, sizeof(vIAC), "%d", valorIAC);
   snprintf(vCO2, sizeof(vCO2), "%.2f", voltCO2);
 
-  desenharDashboardHeader("DASH 3 - SENSORES");
+  desenharDashboardHeader("MOTOR 2");
 
-  desenharCardDash(15, 55, 120, 75, "BATERIA", vBAT, "V", ST77XX_ORANGE);
+  desenharCardDash(15, 55, 120, 75, "VBAT", vBAT, "V", ST77XX_ORANGE);
   desenharCardDash(145, 55, 120, 75, "VELOC.", vVEL, "km/h", ST77XX_CYAN);
-  desenharCardDash(15, 145, 120, 75, "INJECAO", vINJ, "ms", ST77XX_GREEN);
-  desenharCardDash(145, 145, 120, 75, "CO2 POT", vCO2, "V", ST77XX_MAGENTA);
-}
-
-void dashboardALDL3() {
-  char vIAT[16];  
-  char vECU[16];
-  char vRX[16];
-  char vCHK[16];
-
-  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
-  
-  snprintf(vIAT, sizeof(vIAT), "%.1f", tempAdmissao);
-  snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
-  snprintf(vRX, sizeof(vRX), "%d", pacotesRecebidos);
-  snprintf(vCHK, sizeof(vCHK), "%d", errosChecksum);
-
-  desenharDashboardHeader("DASH 4 - ECU");
-
-  desenharCardDash(15, 55, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_CYAN);
-  desenharCardDash(145, 55, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
-  desenharCardDash(15, 145, 120, 75, "PACOTES", vRX, "rx", ST77XX_GREEN);
-  desenharCardDash(145, 145, 120, 75, "CHECKSUM", vCHK, "erros", ST77XX_ORANGE);
+  desenharCardDash(15, 145, 120, 75, "IAC", vIAC, "steps", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "POT CO2", vCO2, "V", ST77XX_MAGENTA);
 }
 
 void dashboardALDL4() {
@@ -1302,7 +1562,7 @@ void dashboardALDL4() {
   snprintf(vMAP, sizeof(vMAP), "%.2f", valorMAP);
   snprintf(vVEL, sizeof(vVEL), "%d", velocidade);
 
-  desenharDashboardHeader("DASH 5 - CUSTOM");
+  desenharDashboardHeader("MOTOR 3");
 
   desenharCardDash(15, 55, 120, 75, "RPM", vRPM, "rpm", ST77XX_YELLOW);
   desenharCardDash(145, 55, 120, 75, "TPS", vTPS, "%", ST77XX_CYAN);
@@ -1311,25 +1571,159 @@ void dashboardALDL4() {
 }
 
 void dashboardALDL5() {
+  char vSPK[16];
+  char vAFR[16];
+  char vINJ[16];
+  char vCO2[16];
+
+  snprintf(vSPK, sizeof(vSPK), "%.1f", valorAvancoIgnicao);
+  snprintf(vAFR, sizeof(vAFR), "%.1f", valorAFR);
+  snprintf(vINJ, sizeof(vINJ), "%.2f", tempoInjecao);
+  snprintf(vCO2, sizeof(vCO2), "%.2f", voltCO2);
+
+  desenharDashboardHeader("MISTURA");
+
+  desenharCardDash(15, 55, 120, 75, "SPK", vSPK, "graus", ST77XX_YELLOW);
+  desenharCardDash(145, 55, 120, 75, "AFR DES", vAFR, ":1", ST77XX_CYAN);
+  desenharCardDash(15, 145, 120, 75, "INJECAO", vINJ, "ms", ST77XX_GREEN);
+  desenharCardDash(145, 145, 120, 75, "POT CO2", vCO2, "V", ST77XX_MAGENTA);
+}
+
+void dashboardALDL6() {
   char vFan[8];
   char vMotor[8];
   char vTempo[16];
-  char vECU[8];
+  char vIAT[16];
 
-  bool fanEstimado = tempMotor >= fanEstimadoLimite;
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+
+  bool fanEstimado = atualizarFanEstimado();
 
   snprintf(vFan, sizeof(vFan), "%s", fanEstimado ? "ON" : "OFF");
   snprintf(vMotor, sizeof(vMotor), "%s", tempoMotorLigado > 0 ? "ON" : "OFF");
-  snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
+  snprintf(vIAT, sizeof(vIAT), "%.1f", tempAdmissao);
 
   formatarTempoMotor(vTempo, sizeof(vTempo), tempoMotorLigado);
 
-  desenharDashboardHeader("DASH 6 - STATUS");
+  desenharDashboardHeader("STATUS");
 
   desenharCardDash(15, 55, 120, 75, "FAN", vFan, "", fanEstimado ? ST77XX_GREEN : ST77XX_RED);
-  desenharCardDash(145, 55, 120, 75, "MOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
-  desenharCardDash(15, 145, 120, 75, "TEMPO", vTempo, "motor ligado", ST77XX_CYAN);
-  desenharCardDash(145, 145, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
+  desenharCardDash(145, 55, 120, 75, "VMOTOR", vMotor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
+  desenharCardDash(15, 145, 120, 75, "TEMPO", vTempo, "ligado", ST77XX_CYAN);
+  desenharCardDash(145, 145, 120, 75, "TEMP ADM", vIAT, "C", ST77XX_ORANGE);
+}
+
+void dashboardALDL7() {
+  char vECU[16];
+  char vRX[16];
+  char vCHK[16];
+  char vDESC[16];
+
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+
+  snprintf(vECU, sizeof(vECU), "%s", ecuConectada ? "ON" : "OFF");
+  snprintf(vRX, sizeof(vRX), "%d", pacotesRecebidos);
+  snprintf(vCHK, sizeof(vCHK), "%d", errosChecksum);
+  snprintf(vDESC, sizeof(vDESC), "%lu", bytesLixoDescartados);
+
+  desenharDashboardHeader("STATUS ECU");
+
+  desenharCardDash(15, 55, 120, 75, "ECU", vECU, ecuConectada ? "online" : "offline", ecuConectada ? ST77XX_GREEN : ST77XX_RED);
+  desenharCardDash(145, 55, 120, 75, "PACOTES", vRX, "rx", ST77XX_GREEN);
+  desenharCardDash(15, 145, 120, 75, "CHECKSUM", vCHK, "erros", ST77XX_ORANGE);
+  desenharCardDash(145, 145, 120, 75, "DESCART.", vDESC, "bytes", ST77XX_MAGENTA);
+}
+
+void calibrarGForce() {
+  sensors_event_t a, g, temp;
+
+  float somaX = 0.0f;
+  float somaY = 0.0f;
+  float somaZ = 0.0f;
+  int leituras = 80;
+
+  for (int i = 0; i < leituras; i++) {
+    mpu.getEvent(&a, &g, &temp);
+
+    somaX += a.acceleration.x / 9.80665f;
+    somaY += a.acceleration.y / 9.80665f;
+    somaZ += a.acceleration.z / 9.80665f;
+
+    delay(10);
+  }
+
+  gOffsetX = somaX / leituras;
+  gOffsetY = somaY / leituras;
+
+  // No eixo vertical, parado costuma ter aproximadamente 1G por causa da gravidade.
+  // Guardamos o offset para o vertical ficar perto de 0 parado.
+  gOffsetZ = somaZ / leituras;
+
+  gForceCalibrado = true;
+}
+
+void atualizarGForce() {
+  if (millis() - gForceUltimaLeitura < 50) {
+    return;
+  }
+
+  gForceUltimaLeitura = millis();
+
+  sensors_event_t a, g, temp;
+  mpu.getEvent(&a, &g, &temp);
+
+  float rawX = a.acceleration.x / 9.80665f;
+  float rawY = a.acceleration.y / 9.80665f;
+  float rawZ = a.acceleration.z / 9.80665f;
+
+  if (!gForceCalibrado) {
+    gOffsetX = rawX;
+    gOffsetY = rawY;
+    gOffsetZ = rawZ;
+    gForceCalibrado = true;
+  }
+
+  // Ajuste conforme a posição física do seu MPU6050 no carro:
+  // X = lateral
+  // Y = longitudinal
+  // Z = vertical
+  float novoLateral = rawX - gOffsetX;
+  float novoLongitudinal = rawY - gOffsetY;
+  float novoVertical = rawZ - gOffsetZ;
+
+  // Filtro simples para não ficar pulando demais na tela
+  const float alpha = 0.25f;
+
+  gLateral = (gLateral * (1.0f - alpha)) + (novoLateral * alpha);
+  gLongitudinal = (gLongitudinal * (1.0f - alpha)) + (novoLongitudinal * alpha);
+  gVertical = (gVertical * (1.0f - alpha)) + (novoVertical * alpha);
+
+  gTotal = sqrt(
+    (gLateral * gLateral) +
+    (gLongitudinal * gLongitudinal) +
+    (gVertical * gVertical)
+  );
+}
+
+void dashboardGForce() {
+  atualizarGForce();
+
+  char vLat[16];
+  char vLong[16];
+  char vVert[16];
+  char vTotal[16];
+
+  snprintf(vLat, sizeof(vLat), "%.2f", gLateral);
+  snprintf(vLong, sizeof(vLong), "%.2f", gLongitudinal);
+  snprintf(vVert, sizeof(vVert), "%.2f", gVertical);
+  snprintf(vTotal, sizeof(vTotal), "%.2f", gTotal);
+
+  desenharDashboardHeader("G-FORCE");
+
+  desenharCardDash(15, 55, 120, 75, "LAT G", vLat, "curva", ST77XX_CYAN);
+  desenharCardDash(145, 55, 120, 75, "LONG G", vLong, "acel/freio", ST77XX_YELLOW);
+  desenharCardDash(15, 145, 120, 75, "VERT G", vVert, "impacto", ST77XX_ORANGE);
+  desenharCardDash(145, 145, 120, 75, "TOTAL G", vTotal, "resultante", ST77XX_GREEN);
 }
 
 void ajustarHora() {
@@ -1596,6 +1990,8 @@ void telaStatusALDL() {
   static float prevMAP = -99999;
   static int prevVel = -99999;
   static unsigned long prevPolling = 0xFFFFFFFF;
+  static uint16_t prevEcuIdRaw = 0xFFFF;
+  static String prevEcuModulo = "";
 
   ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
 
@@ -1654,11 +2050,26 @@ void telaStatusALDL() {
     prevID2 = ultimoID2;
   }
 
+  if (prevEcuIdRaw != ecuIdRaw || prevEcuModulo != ecuModuloNome) {
+  tft.fillRect(0, 50, 280, 12, ST77XX_BLACK);
+
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(xInfo, 52);
+  tft.printf("ECU ID:0x%04X DEC:%u ", ecuIdRaw, ecuIdRaw);
+
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.print(ecuModuloNome);
+
+  prevEcuIdRaw = ecuIdRaw;
+  prevEcuModulo = ecuModuloNome;
+}
+
   if (prevContTX != contTX || prevContEco != contEco || prevPacotes != (unsigned long)pacotesRecebidos) {
-    tft.fillRect(0, 58, 280, 20, ST77XX_BLACK);
+    tft.fillRect(0, 64, 280, 20, ST77XX_BLACK);
     tft.setTextSize(2);
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(xInfo, 62);
+    tft.setCursor(xInfo, 68);
     tft.printf("TX:%lu ECO:%lu RX:%d", contTX, contEco, pacotesRecebidos);
     prevContTX = contTX;
     prevContEco = contEco;
@@ -2605,6 +3016,14 @@ int32_t GIFSeekFile(GIFFILE *pFile, int32_t iPosition) {
 }
 
 void GIFDraw(GIFDRAW *pDraw) {
+  if (gifEscalarParaTela) {
+    GIFDrawComEscala(pDraw);
+  } else {
+    GIFDrawSemEscala(pDraw);
+  }
+}
+
+void GIFDrawSemEscala(GIFDRAW *pDraw) {
   uint8_t *s = pDraw->pPixels;
   uint16_t *palette = pDraw->pPalette;
 
@@ -2613,27 +3032,110 @@ void GIFDraw(GIFDRAW *pDraw) {
   int width = pDraw->iWidth;
 
   if (y >= 240 || x >= 280) return;
-  if (width + x > 280)
+
+  if (width + x > 280) {
     width = 280 - x;
+  }
+
+  if (width <= 0) return;
 
   if (pDraw->ucDisposalMethod == 2) {
     for (int i = 0; i < width; i++) {
-      if (s[i] == pDraw->ucTransparent)
+      if (s[i] == pDraw->ucTransparent) {
         s[i] = pDraw->ucBackground;
+      }
     }
     pDraw->ucHasTransparency = 0;
   }
 
   for (int i = 0; i < width; i++) {
     uint8_t index = s[i];
-    if (pDraw->ucHasTransparency && index == pDraw->ucTransparent)
-      continue;
-    lineBuffer[i] = palette[index];
+
+    if (pDraw->ucHasTransparency && index == pDraw->ucTransparent) {
+      lineBuffer[i] = ST77XX_BLACK;
+    } else {
+      lineBuffer[i] = palette[index];
+    }
   }
 
   tft.startWrite();
   tft.setAddrWindow(x, y, width, 1);
   tft.writePixels(lineBuffer, width);
+  tft.endWrite();
+}
+
+void GIFDrawComEscala(GIFDRAW *pDraw) {
+  uint8_t *s = pDraw->pPixels;
+  uint16_t *palette = pDraw->pPalette;
+
+  int srcLineY = pDraw->iY + pDraw->y;
+  int srcLineX = pDraw->iX;
+  int srcLineW = pDraw->iWidth;
+
+  if (srcLineY < 0 || srcLineY >= gifOrigH) return;
+  if (srcLineW <= 0) return;
+
+  if (pDraw->ucDisposalMethod == 2) {
+    for (int i = 0; i < srcLineW; i++) {
+      if (s[i] == pDraw->ucTransparent) {
+        s[i] = pDraw->ucBackground;
+      }
+    }
+    pDraw->ucHasTransparency = 0;
+  }
+
+  int dstY0 = gifOffsetY + ((int32_t)srcLineY * gifDrawH) / gifOrigH;
+  int dstY1 = gifOffsetY + ((int32_t)(srcLineY + 1) * gifDrawH) / gifOrigH;
+
+  if (dstY1 <= dstY0) {
+    dstY1 = dstY0 + 1;
+  }
+
+  if (dstY0 >= 240 || dstY1 <= 0) return;
+
+  if (dstY0 < 0) dstY0 = 0;
+  if (dstY1 > 240) dstY1 = 240;
+
+  int dstX = gifOffsetX;
+  int dstW = gifDrawW;
+
+  if (dstX < 0) {
+    dstW += dstX;
+    dstX = 0;
+  }
+
+  if (dstX + dstW > 280) {
+    dstW = 280 - dstX;
+  }
+
+  if (dstW <= 0) return;
+
+  for (int outX = 0; outX < dstW; outX++) {
+    int telaXRelativo = outX + (dstX - gifOffsetX);
+    int srcX = ((int32_t)telaXRelativo * gifOrigW) / gifDrawW;
+
+    if (srcX < srcLineX || srcX >= srcLineX + srcLineW) {
+      lineBuffer[outX] = ST77XX_BLACK;
+      continue;
+    }
+
+    int posLinha = srcX - srcLineX;
+    uint8_t index = s[posLinha];
+
+    if (pDraw->ucHasTransparency && index == pDraw->ucTransparent) {
+      lineBuffer[outX] = ST77XX_BLACK;
+    } else {
+      lineBuffer[outX] = palette[index];
+    }
+  }
+
+  tft.startWrite();
+
+  for (int y = dstY0; y < dstY1; y++) {
+    tft.setAddrWindow(dstX, y, dstW, 1);
+    tft.writePixels(lineBuffer, dstW);
+  }
+
   tft.endWrite();
 }
 
@@ -2644,6 +3146,8 @@ void rodarGifAbertura(String nomeArquivo) {
   if (!SD.exists(nomeArquivo)) {
     return;
   }
+
+  prepararEscalaGif(nomeArquivo);
 
   tft.fillScreen(ST77XX_BLACK);
 
@@ -2892,22 +3396,104 @@ uint8_t lerPayloadByte(const uint8_t* frame, size_t start) {
   return frame[ALDL_HEADER_LEN + (start - 1)];
 }
 
+ModuloECUInfo identificarModuloECU(uint16_t ecuId) {
+  static const ModuloECUInfo desconhecido = {
+  0,
+  "----",
+  "----",
+  "----",
+  "Modulo desconhecido",
+  "-",
+  "-",
+  "-",
+  "-"
+};
+
+  static const ModuloECUInfo modulos[] = {
+    // ecuId, codigo, GM, veiculo, motor, cambio, combustivel
+
+    { 5999, "AYMM", "5999",   "1616599", "MONZA",       "92",    "2.0", "MANUAL", "GASOLINA" },
+    { 2829, "BKSJ", "2829",   "16202829","MONZA",       "95",    "2.0", "MANUAL", "GASOLINA" },
+    { 7419, "BBAB", "7484",   "1617749", "MONZA",       "92.5",  "2.0", "MANUAL", "ALCOOL"   },
+    { 6009, "AYMM", "9642",   "1616009", "MONZA",       "92",    "2.0", "MANUAL", "ALCOOL"   },
+    { 3659, "APZJ", "9689",   "1613659", "MONZA",       "92",    "1.8", "MANUAL", "GASOLINA" },
+    { 3679, "APZL", "9684",   "1613679", "MONZA",       "92",    "1.8", "MANUAL", "ALCOOL"   },
+    { 7409, "BBAA", "7477",   "1617409", "MONZA",       "92.5",  "1.8", "MANUAL", "ALCOOL"   },
+
+    { 7399, "BAZZ", "7468",   "1617399", "KAD/IPA",     "92.5",  "1.8", "MANUAL", "ALCOOL"   },
+    { 5999, "AYMM", "9646",   "1616599", "KAD/IPA",     "92",    "2.0", "MANUAL", "GASOLINA" },
+    { 7939, "ARXC", "9673",   "1617939", "KAD/IPA",     "92",    "1.8", "MANUAL", "GASOLINA" },
+    { 7959, "ARXF", "9625",   "1617959", "KAD/IPA",     "92",    "1.8", "MANUAL", "ALCOOL"   },
+    { 2949, "BKSY", "2808",   "16202949","KAD/IPA",     "95",    "1.8", "MANUAL", "GASOLINA" },
+    { 2829, "BKSJ", "2765",   "16202829","KAD/IPA",     "95",    "2.0", "MANUAL", "GASOLINA" }
+  };
+
+  for (size_t i = 0; i < sizeof(modulos) / sizeof(modulos[0]); i++) {
+    if (modulos[i].ecuId == ecuId) {
+      return modulos[i];
+    }
+  }
+
+  return desconhecido;
+}
+
+String montarDescricaoModuloECU(const ModuloECUInfo& info) {
+  String descricao = "";
+
+  descricao += info.codigo;
+  descricao += " EPROM ";
+  descricao += info.eprom;
+  descricao += " GM ";
+  descricao += info.gm;
+  descricao += " ";
+  descricao += info.veiculo;
+  descricao += " ";
+  descricao += info.ano;
+  descricao += " ";
+  descricao += info.motor;
+  descricao += " ";
+  descricao += info.combustivel;
+
+  return descricao;
+}
+
 void processarDados(const uint8_t* frame) {
+  uint8_t ecuIdMsb = lerPayloadByte(frame, 1);
+  uint8_t ecuIdLsb = lerPayloadByte(frame, 2);
+
+  // ECU ID possui 16 bits.
+  // Primeiro tenta MSB/LSB, que é o mais comum nesse tipo de stream.
+  ecuIdRaw = ((uint16_t)ecuIdMsb << 8) | ecuIdLsb;
+
+  ModuloECUInfo infoECU = identificarModuloECU(ecuIdRaw);
+  ecuModuloCodigo = String(infoECU.codigo);
+  ecuModuloDescricao = montarDescricaoModuloECU(infoECU);
+
+  if (strcmp(infoECU.codigo, "----") == 0) {
+    ecuModuloNome = "Desconhecido";
+  } else {
+    ecuModuloNome = String(infoECU.codigo);
+  }
+
   uint8_t malf1Raw = lerPayloadByte(frame, 3);
   uint8_t malf2Raw = lerPayloadByte(frame, 4);
   uint8_t malf3Raw = lerPayloadByte(frame, 5);
-
   uint8_t tempRaw  = lerPayloadByte(frame, 6);
   uint8_t ptpsRaw  = lerPayloadByte(frame, 9);
   uint8_t rpmRaw   = lerPayloadByte(frame, 10);
   uint8_t velRaw   = lerPayloadByte(frame, 13);
   uint8_t CO2Raw   = lerPayloadByte(frame, 16);
+  uint8_t iacRaw   = lerPayloadByte(frame, 21);
   uint8_t mapRaw  = lerPayloadByte(frame, 26);
   uint8_t matRaw = lerPayloadByte(frame, 30);
   uint8_t battRaw  = lerPayloadByte(frame, 32);
+  uint8_t rawAvancoIgnicao = lerPayloadByte(frame, 33);
+
   uint8_t bpwMsb   = lerPayloadByte(frame, 36);
   uint8_t bpwLsb   = lerPayloadByte(frame, 37);
-  uint8_t timeEng   = lerPayloadByte(frame, 41);
+  uint8_t rawAFR = lerPayloadByte(frame, 38);
+  uint8_t timeMsb   = lerPayloadByte(frame, 40);
+  uint8_t timeLsb   = lerPayloadByte(frame, 41);
   uint8_t lccpmwRaw = lerPayloadByte(frame, 58);
 
   malf1 = malf1Raw;
@@ -2920,11 +3506,14 @@ void processarDados(const uint8_t* frame) {
   valorTPS = ptpsRaw / 2.55f;
   valorRPM = (int)(rpmRaw * 25.0f);
   velocidade = velRaw;
+  valorIAC = iacRaw;
   voltagem = battRaw / 10.0f;
   voltCO2 = CO2Raw * (5.0f / 255.0f);
   valorMAP = mapRaw * (5.0f / 255.0f);
   tempoInjecao = ((bpwMsb * 256.0f) + bpwLsb) / 65.536f;
-  tempoMotorLigado = timeEng;
+  valorAvancoIgnicao = ((float)rawAvancoIgnicao * 90.0f) / 256.0f;
+  valorAFR = ((float)rawAFR) / 10.0f;
+  tempoMotorLigado = ((uint32_t)timeMsb * 256UL) + timeLsb;
   //shiftLightALDL = (lccpmw & (1 << 7)) == 0;
 
   ultimaMensagemALDL = millis();
@@ -2932,16 +3521,41 @@ void processarDados(const uint8_t* frame) {
   ecuConectada = true;
 }
 
-void formatarTempoMotor(char* buffer, size_t tamanho, int segundos) {
-  int horas = segundos / 3600;
-  int minutos = (segundos % 3600) / 60;
-  int seg = segundos % 60;
+void formatarTempoMotor(char* buffer, size_t tamanho, uint32_t segundos) {
+  uint32_t horas = segundos / 3600;
+  uint32_t minutos = (segundos % 3600) / 60;
+  uint32_t seg = segundos % 60;
 
   if (horas > 0) {
-    snprintf(buffer, tamanho, "%02d:%02d:%02d", horas, minutos, seg);
+    snprintf(buffer, tamanho, "%02lu:%02lu:%02lu",
+             (unsigned long)horas,
+             (unsigned long)minutos,
+             (unsigned long)seg);
   } else {
-    snprintf(buffer, tamanho, "%02d:%02d", minutos, seg);
+    snprintf(buffer, tamanho, "%02lu:%02lu",
+             (unsigned long)minutos,
+             (unsigned long)seg);
   }
+}
+
+bool atualizarFanEstimado() {
+  // Se ainda nao tem leitura valida da ECU, evita marcar FAN ligada por lixo de memoria/leitura inicial
+  if (!aldlPrimeiroFrameOk || !aldlTemFrameValido || pacotesRecebidos <= 0) {
+    fanEstimadoLigada = false;
+    return fanEstimadoLigada;
+  }
+
+  // Histerese:
+  // Liga em 100C ou mais
+  // Desliga apenas em 96C ou menos
+  if (!fanEstimadoLigada && tempMotor >= fanEstimadoLigaLimite) {
+    fanEstimadoLigada = true;
+  } 
+  else if (fanEstimadoLigada && tempMotor <= fanEstimadoDesligaLimite) {
+    fanEstimadoLigada = false;
+  }
+
+  return fanEstimadoLigada;
 }
 
 void processarBufferRecepcaoALDL() {
@@ -3223,6 +3837,185 @@ String sanitizarNomeArquivoGif(String nome) {
   return "/" + limpo;
 }
 
+String htmlEscape(String texto) {
+  texto.replace("&", "&amp;");
+  texto.replace("<", "&lt;");
+  texto.replace(">", "&gt;");
+  texto.replace("\"", "&quot;");
+  texto.replace("'", "&#39;");
+  return texto;
+}
+
+String urlEncode(String texto) {
+  String encoded = "";
+  const char *hex = "0123456789ABCDEF";
+
+  for (int i = 0; i < texto.length(); i++) {
+    char c = texto.charAt(i);
+
+    if (
+      (c >= 'a' && c <= 'z') ||
+      (c >= 'A' && c <= 'Z') ||
+      (c >= '0' && c <= '9') ||
+      c == '-' || c == '_' || c == '.' || c == '~' || c == '/'
+    ) {
+      encoded += c;
+    } else {
+      encoded += '%';
+      encoded += hex[(c >> 4) & 0x0F];
+      encoded += hex[c & 0x0F];
+    }
+  }
+
+  return encoded;
+}
+
+bool ehArquivoGifSeguro(String caminho) {
+  caminho.trim();
+  caminho.replace("\\", "/");
+
+  if (!caminho.startsWith("/")) {
+    caminho = "/" + caminho;
+  }
+
+  String lower = caminho;
+  lower.toLowerCase();
+
+  if (!lower.endsWith(".gif")) return false;
+  if (caminho.indexOf("..") >= 0) return false;
+  if (caminho.indexOf("//") >= 0) return false;
+
+  // Garante que é arquivo direto na raiz do SD, tipo /abertura.gif
+  String semBarraInicial = caminho.substring(1);
+  if (semBarraInicial.indexOf("/") >= 0) return false;
+
+  return true;
+}
+
+bool obterDimensaoGif(String caminho, uint16_t &largura, uint16_t &altura) {
+  largura = 0;
+  altura = 0;
+
+  if (!ehArquivoGifSeguro(caminho)) return false;
+  if (!SD.exists(caminho)) return false;
+
+  File f = SD.open(caminho, FILE_READ);
+  if (!f) return false;
+
+  uint8_t header[10];
+  size_t lidos = f.read(header, 10);
+  f.close();
+
+  if (lidos < 10) return false;
+
+  bool assinaturaOk =
+    header[0] == 'G' &&
+    header[1] == 'I' &&
+    header[2] == 'F' &&
+    header[3] == '8' &&
+    (header[4] == '7' || header[4] == '9') &&
+    header[5] == 'a';
+
+  if (!assinaturaOk) return false;
+
+  largura = header[6] | (header[7] << 8);
+  altura = header[8] | (header[9] << 8);
+
+  return true;
+}
+
+String montarHtmlListaGifs() {
+  String html = "";
+
+  File root = SD.open("/");
+  if (!root) {
+    html += "<p style='color:#f66'>Erro abrindo raiz do SD.</p>";
+    return html;
+  }
+
+  File file = root.openNextFile();
+  bool encontrou = false;
+
+  html += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px'>";
+
+  while (file) {
+    String nome = String(file.name());
+    String nomeLower = nome;
+    nomeLower.toLowerCase();
+
+    if (!file.isDirectory() && nomeLower.endsWith(".gif")) {
+      encontrou = true;
+
+      if (!nome.startsWith("/")) {
+        nome = "/" + nome;
+      }
+
+      uint32_t tamanho = file.size();
+      uint16_t largura = 0;
+      uint16_t altura = 0;
+      bool temDimensao = obterDimensaoGif(nome, largura, altura);
+
+      String nomeTela = nome;
+      if (nomeTela.startsWith("/")) {
+        nomeTela = nomeTela.substring(1);
+      }
+
+      html += "<div style='background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:12px'>";
+      html += "<div style='font-weight:bold;margin-bottom:8px;color:#fff'>";
+      html += htmlEscape(nomeTela);
+      html += "</div>";
+
+      html += "<div style='background:#000;border-radius:8px;padding:8px;text-align:center;margin-bottom:8px'>";
+      html += "<img src='/gif?name=" + urlEncode(nome) + "' ";
+      html += "style='max-width:180px;max-height:150px;width:auto;height:auto;border:1px solid #444'>";
+      html += "</div>";
+
+      html += "<div style='font-size:14px;color:#ccc'>";
+      html += "Tamanho: " + String(tamanho) + " bytes<br>";
+
+      if (temDimensao) {
+        html += "Dimensao: " + String(largura) + " x " + String(altura) + " px<br>";
+
+        if (largura != 280 || altura != 240) {
+          html += "<span style='color:#ffcc00'>Aviso: diferente de 280x240</span><br>";
+        }
+      } else {
+        html += "<span style='color:#f66'>Nao foi possivel ler a dimensao</span><br>";
+      }
+
+      if (nome == gifAbertura || nomeTela == gifAbertura) {
+        html += "<span style='color:#6f6'>GIF configurado como abertura</span><br>";
+      }
+
+      html += "</div>";
+
+      html += "<form method='POST' action='/deletegif' ";
+      html += "onsubmit=\"return confirm('Apagar este GIF do SD?');\" ";
+      html += "style='margin-top:10px'>";
+      html += "<input type='hidden' name='name' value='" + htmlEscape(nome) + "'>";
+      html += "<button type='submit' style='background:#b00020;color:white;border:0;border-radius:6px;padding:8px 12px;cursor:pointer'>";
+      html += "Deletar";
+      html += "</button>";
+      html += "</form>";
+
+      html += "</div>";
+    }
+
+    file.close();
+    file = root.openNextFile();
+  }
+
+  root.close();
+
+  html += "</div>";
+
+  if (!encontrou) {
+    html += "<p>Nenhum GIF encontrado no SD.</p>";
+  }
+
+  return html;
+}
+
 void configurarRotasUploadGifs() {
   otaServer.on("/", HTTP_GET, []() {
     String html;
@@ -3231,16 +4024,23 @@ void configurarRotasUploadGifs() {
     html += "<title>Monza Dash - Upload GIFs</title>";
     html += "</head><body style='font-family:Arial;background:#111;color:#eee;padding:20px'>";
     html += "<h2>Monza Dash - Upload GIFs</h2>";
-    html += "<p>Use GIF .gif em 280x240. Evite arquivos muito grandes.</p>";
+    html += "<p>Use GIF .gif. Se for maior que 280x240, sera ajustado proporcionalmente na tela.</p>";
+    html += "<p>Para melhor desempenho, prefira GIFs ja proximos de 280x240 e arquivos pequenos.</p>";
     html += "<p>Depois voce pode selecionar o GIF em Configuracao &gt; GIF abertura.</p>";
-    html += "<form method='POST' action='/uploadgif' enctype='multipart/form-data'>";
+
+    html += "<form method='POST' action='/uploadgif' enctype='multipart/form-data' ";
+    html += "style='background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:12px;margin-bottom:16px'>";
     html += "<input type='file' name='gif' accept='.gif,image/gif'><br><br>";
-    html += "<input type='submit' value='Enviar GIF'>";
+    html += "<input type='submit' value='Enviar GIF' ";
+    html += "style='background:#008cff;color:white;border:0;border-radius:6px;padding:8px 12px;cursor:pointer'>";
     html += "</form>";
+
+    html += "<p>Status atual: " + htmlEscape(gifUploadStatusMsg) + "</p>";
+    html += "<p>Arquivo: " + htmlEscape(gifUploadNomeArquivo) + "</p>";
     html += "<hr>";
-    html += "<p>Status atual: " + gifUploadStatusMsg + "</p>";
-    html += "<p>Arquivo: " + gifUploadNomeArquivo + "</p>";
-    html += "<p><a style='color:#6cf' href='/listar'>Listar GIFs no SD</a></p>";
+    html += "<h3>GIFs no SD</h3>";
+    html += montarHtmlListaGifs();
+    html += "<br><p><a style='color:#6cf' href='/listar'>Atualizar lista</a></p>";
     html += "</body></html>";
 
     otaServer.send(200, "text/html", html);
@@ -3253,43 +4053,104 @@ void configurarRotasUploadGifs() {
     html += "<title>GIFs no SD</title>";
     html += "</head><body style='font-family:Arial;background:#111;color:#eee;padding:20px'>";
     html += "<h2>GIFs no SD</h2>";
-    html += "<ul>";
-
-    File root = SD.open("/");
-    if (root) {
-      File file = root.openNextFile();
-
-      while (file) {
-        String nome = String(file.name());
-        String nomeLower = nome;
-        nomeLower.toLowerCase();
-
-        if (!file.isDirectory() && nomeLower.endsWith(".gif")) {
-          html += "<li>";
-          html += nome;
-          html += " - ";
-          html += String(file.size());
-          html += " bytes";
-          html += "</li>";
-        }
-
-        file.close();
-        file = root.openNextFile();
-      }
-
-      root.close();
-    }
-
-    html += "</ul>";
+    html += montarHtmlListaGifs();
     html += "<p><a style='color:#6cf' href='/'>Voltar</a></p>";
     html += "</body></html>";
 
     otaServer.send(200, "text/html", html);
   });
 
+  otaServer.on("/gif", HTTP_GET, []() {
+    if (!otaServer.hasArg("name")) {
+      otaServer.send(400, "text/plain", "Parametro name ausente");
+      return;
+    }
+
+    String caminho = otaServer.arg("name");
+    caminho = sanitizarNomeArquivoGif(caminho);
+
+    if (!ehArquivoGifSeguro(caminho)) {
+      otaServer.send(400, "text/plain", "Nome de GIF invalido");
+      return;
+    }
+
+    if (!SD.begin(SD_CS)) {
+      otaServer.send(500, "text/plain", "SD nao iniciado");
+      return;
+    }
+
+    if (!SD.exists(caminho)) {
+      otaServer.send(404, "text/plain", "GIF nao encontrado");
+      return;
+    }
+
+    File f = SD.open(caminho, FILE_READ);
+    if (!f) {
+      otaServer.send(500, "text/plain", "Erro abrindo GIF");
+      return;
+    }
+
+    otaServer.streamFile(f, "image/gif");
+    f.close();
+  });
+
+  otaServer.on("/deletegif", HTTP_POST, []() {
+    if (!otaServer.hasArg("name")) {
+      otaServer.send(400, "text/plain", "Parametro name ausente");
+      return;
+    }
+
+    String caminho = otaServer.arg("name");
+    caminho = sanitizarNomeArquivoGif(caminho);
+
+    if (!ehArquivoGifSeguro(caminho)) {
+      otaServer.send(400, "text/plain", "Nome de GIF invalido");
+      return;
+    }
+
+    if (!SD.begin(SD_CS)) {
+      otaServer.send(500, "text/plain", "SD nao iniciado");
+      return;
+    }
+
+    if (!SD.exists(caminho)) {
+      otaServer.sendHeader("Location", "/listar");
+      otaServer.send(303);
+      return;
+    }
+
+    bool eraGifAbertura = false;
+
+    String semBarra = caminho;
+    if (semBarra.startsWith("/")) {
+      semBarra = semBarra.substring(1);
+    }
+
+    if (gifAbertura == caminho || gifAbertura == semBarra) {
+      eraGifAbertura = true;
+    }
+
+    bool apagou = SD.remove(caminho);
+
+    if (apagou) {
+      gifUploadStatusMsg = "GIF deletado";
+      gifUploadNomeArquivo = caminho;
+
+      if (eraGifAbertura) {
+        gifAbertura = "abertura.gif";
+        salvarConfiguracoes();
+      }
+
+      otaServer.sendHeader("Location", "/listar");
+      otaServer.send(303);
+    } else {
+      otaServer.send(500, "text/plain", "Erro ao deletar GIF");
+    }
+  });
+
   otaServer.on("/uploadgif", HTTP_POST,
     []() {
-      bool ok = !gifUploadErro && !gifUploadEmAndamento && gifUploadNomeArquivo.length() > 0;
+      bool ok = !gifUploadErro && gifUploadNomeArquivo.length() > 0;
 
       otaServer.sendHeader("Connection", "close");
 
@@ -3314,9 +4175,18 @@ void configurarRotasUploadGifs() {
         gifUploadPercent = 0;
         gifUploadStatusMsg = "Iniciando";
         gifUploadNomeArquivo = sanitizarNomeArquivoGif(upload.filename);
+        gifUploadErro = false;
 
         if (!SD.begin(SD_CS)) {
           gifUploadStatusMsg = "SD nao iniciado";
+          gifUploadEmAndamento = false;
+          gifUploadErro = true;
+          gifUploadNomeArquivo = "";
+          return;
+        }
+
+        if (!ehArquivoGifSeguro(gifUploadNomeArquivo)) {
+          gifUploadStatusMsg = "Nome de arquivo invalido";
           gifUploadEmAndamento = false;
           gifUploadErro = true;
           gifUploadNomeArquivo = "";
@@ -3355,6 +4225,7 @@ void configurarRotasUploadGifs() {
           gifUploadPercent = 50;
         }
       }
+
       else if (upload.status == UPLOAD_FILE_END) {
         if (gifUploadFile) {
           gifUploadFile.close();
@@ -3756,12 +4627,15 @@ void telaDashDefault() {
   const int totalOpcoes = totalDashboards + 1;
 
   const char* nomesDash[totalDashboards] = {
-    "Ambiente",
-    "Motor",
-    "Sensores",
-    "ECU",
-    "Custom",
-    "Status"
+    "RELOGIO",
+    "MODULO",
+    "MOTOR",
+    "MOTOR 2",
+    "MOTOR 3",
+    "MISTURA",
+    "STATUS",
+    "STATUS ECU",
+    "G-FORCE"
   };
 
   if (!iniciado) {
