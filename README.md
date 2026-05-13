@@ -1,376 +1,603 @@
 # Monza ALDL Dashboard
 
-Dashboard embarcado para leitura, diagnóstico e visualização de dados ALDL da ECU Multec 700 do Chevrolet Monza GLS 2.0 EFI, usando ESP32, display TFT ST7789V3, encoder rotativo, cartão SD, sensores auxiliares, alertas configuráveis, GIF de abertura e atualização via OTA.
+Dashboard embarcado para Chevrolet Monza EFI com comunicação ALDL, display TFT ST7789, sensores auxiliares, logs em cartão SD, upload OTA e mascote animado.
 
-O projeto foi criado para transformar os dados da ECU e dos sensores externos em uma interface visual instalada no carro, com navegação por menu, dashboards, telas de diagnóstico e configurações persistentes no cartão SD.
+O projeto foi desenvolvido para monitorar dados da ECU Multec 700 via ALDL 8192 baud, exibindo informações em tempo real no display TFT e permitindo diagnósticos, configuração, logs e animações diretamente no ESP32.
 
 ---
 
-## Visão geral
+## 🚗 Veículo alvo
 
-O **Monza ALDL Dashboard** lê dados da ECU via protocolo ALDL em 8192 baud e exibe as informações em tempo real no display TFT.
+- Chevrolet Monza 1996
+- Motor 2.0 EFI gasolina
+- ECU Multec 700
+- Comunicação ALDL 8192 baud
+- Linha ALDL no pino M do conector de diagnóstico
 
-Entre as informações exibidas estão:
+---
 
-- RPM
-- TPS
-- MAP em volts
-- Temperatura do motor, CTS
-- Temperatura de admissão, IAT
-- Tensão da bateria
-- Tempo de injeção
-- Velocidade
-- Potenciômetro de CO2
-- Status da ECU
-- Pacotes ALDL recebidos
-- Erros de checksum
-- Tempo de motor ligado
-- Fan estimado pela temperatura
-- Sensores BME280 e MPU6050
-- Status do cartão SD
-- Status elétrico da iluminação
+## ✨ Principais recursos
 
-O sistema também possui:
-
-- Menu navegável por encoder
-- Dashboards múltiplos
-- Alertas visuais configuráveis
-- Configurações salvas em `config.json` no cartão SD
-- GIF de abertura salvo no SD
-- Upload de GIFs via página web
-- Atualização OTA via página web
+- Comunicação ALDL com ECU Multec 700
+- Dashboards com dados em tempo real
+- Telas individuais de sensores
 - Diagnóstico ALDL
-- Leitura e limpeza de códigos da ECU
+- Leitura de códigos de falha da ECU
+- Comando para limpar erros da ECU
+- Status de SD, I2C, BME280, MPU6050 e alimentação
+- Configuração de brilho
+- Configuração de buzzer
+- Configuração de alertas
+- Dashboard inicial configurável
+- Upload OTA de firmware via modo AP
+- Upload de GIFs via navegador
+- GIF de abertura configurável
+- Redimensionamento automático de GIFs maiores que a tela
+- Logs em CSV no cartão SD
+- Limpeza automática de logs antigos
+- Tela G-Force usando MPU6050
+- Mascote / Monzagotchi com humor baseado nos dados do carro
 
 ---
 
-## Hardware principal
+## 🖥️ Display
 
-### Placa
+O projeto usa um display TFT ST7789 SPI.
 
-- ESP32
+Configuração atual:
 
-### Display
-
-- TFT ST7789V3
-- Resolução usada: `280x240`
-- Comunicação SPI
-
-### Controle
-
-- Encoder rotativo KY-040
-- Botão do encoder para selecionar, confirmar e voltar
-
-### Sensores e módulos
-
-- BME280 via I2C
-- MPU6050 via I2C
-- RTC DS3231 via I2C
-- Módulo SD via SPI
-- Buzzer passivo
-- Entrada de iluminação do painel
-
-### Armazenamento
-
-- Cartão SD
-- Formato recomendado: **FAT32**
-
-> Importante: no Windows 11, cartões maiores podem ser formatados como exFAT por padrão. Para o ESP32, use FAT32.
-
-### Comunicação ALDL
-
-- Serial2 do ESP32
-- Baud rate: `8192`
-- Comunicação com a ECU Multec 700 pelo pino ALDL do veículo
+- Display ST7789
+- Resolução usada no projeto: 280 x 240
+- Biblioteca: Adafruit ST7789 / Adafruit GFX
+- Backlight controlado pelo GPIO 32
 
 ---
 
-## Pinagem
+## 📊 Dashboards
 
-| Função | GPIO |
-|---|---:|
-| TFT CS | 5 |
-| TFT DC | 2 |
-| TFT RST | 4 |
-| TFT BLK | 32 |
-| SPI MOSI | 23 |
-| SPI CLK | 18 |
-| SD CS | 13 |
-| I2C SDA | 21 |
-| I2C SCL | 22 |
-| Encoder CLK | 25 |
-| Encoder DT | 26 |
-| Encoder SW | 27 |
-| Buzzer | 33 |
-| Iluminação | 34 |
-| Shift Light / entrada futura | 35 |
-| ALDL RX2 | 16 |
-| ALDL TX2 | 17 |
+O sistema possui múltiplos dashboards acessíveis pelo menu principal.
 
----
+### Dashboards atuais
 
-## Bibliotecas utilizadas
+1. **Relógio**
+   - Hora
+   - Data
+   - Temperatura ambiente
+   - Umidade
+   - Pressão atmosférica
 
-O projeto usa as seguintes bibliotecas principais:
+2. **Módulo**
+   - ECU ID em hexadecimal
+   - ECU ID em decimal
+   - Código do módulo
+   - Código GM
 
-```cpp
-#include <Wire.h>
-#include <SPI.h>
-#include <SD.h>
-#include <ArduinoJson.h>
-#include <AnimatedGIF.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
-#include <Adafruit_BME280.h>
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
-#include <RTClib.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <Update.h>
-```
+3. **Motor**
+   - RPM
+   - TPS
+   - MAP
+   - Temperatura do motor
 
----
+4. **Motor 2**
+   - Tensão da bateria
+   - Velocidade
+   - IAC Steps
+   - Potenciômetro CO2
 
-## Protocolo ALDL
+5. **Motor 3**
+   - RPM
+   - TPS
+   - MAP
+   - Velocidade
 
-O projeto usa a Serial2 do ESP32 para comunicação ALDL com a ECU.
+6. **Mistura**
+   - Avanço de ignição / SPK
+   - AFR desejado pela ECU
+   - Tempo de injeção
+   - Potenciômetro CO2
 
-Configuração principal:
+7. **Status**
+   - FAN estimado
+   - VMOTOR
+   - Tempo de motor ligado
+   - Temperatura de admissão
 
-```cpp
-static const uint32_t ALDL_BAUD_RATE = 8192;
-```
+8. **Status ECU**
+   - ECU online/offline
+   - Pacotes recebidos
+   - Erros de checksum
+   - Bytes descartados
 
-Frames principais:
-
-```cpp
-static const uint8_t ALDL_REQ_SHUTUP[] = { 0xF4, 0x56, 0x08, 0xAE };
-static const uint8_t ALDL_REQ_STREAM[] = { 0xF4, 0x57, 0x01, 0x00, 0xB4 };
-static const uint8_t ALDL_REQ_CLEAR_DTC[] = { 0xF4, 0x57, 0x0A, 0x00, 0xAB };
-```
-
-O fluxo ALDL faz:
-
-1. Inicialização da sessão ALDL.
-2. Envio do frame `shutup`.
-3. Limpeza do buffer serial.
-4. Polling periódico da ECU.
-5. Validação do checksum.
-6. Processamento do payload.
-7. Atualização das variáveis exibidas na interface.
+9. **G-Force**
+   - Força lateral
+   - Força longitudinal
+   - Força vertical
+   - G total
 
 ---
 
-## Dados ALDL exibidos
+## 🧪 Sensores e dados ALDL
 
-| Dado | Descrição |
-|---|---|
-| RPM | Rotação do motor |
-| TPS | Abertura da borboleta |
-| MAP | Tensão do sensor MAP |
-| CTS | Temperatura do motor |
-| IAT | Temperatura de admissão |
-| Bateria | Tensão da bateria |
-| Tempo de injeção | Tempo de abertura do bico |
-| CO2 POT | Tensão do potenciômetro de CO2 |
-| Velocidade | Velocidade lida da ECU |
-| Malf1 / Malf2 / Malf3 | Bytes de falha da ECU |
-| Tempo motor ligado | Tempo de funcionamento lido do stream |
-| ECU online | Status de comunicação ALDL |
+O projeto lê e exibe diversos dados vindos da ECU via ALDL.
 
----
-
-## Menus
-
-A interface é organizada em menus.
-
-### Menu principal
-
-- Dashboard
-- Sensores
-- Diagnóstico
-- Configuração
-
-### Sensores
-
-- TPS
-- MAP
-- CTS, temperatura do motor
-- IAT, temperatura de admissão
-- Voltímetro
-- RPM
-- Tempo de injeção
-- CO2 POT
-- Voltar
-
-### Diagnóstico
-
-- Status ALDL
-- Códigos ECU
-- Limpar erros ECU
-- Status MPU
-- Status BME
-- Status I2C
-- Status Iluminação
-- SD Card
-- Teste Buzzer
-- Teste Display
-- Voltar
-
-### Configuração
-
-- Data e hora
-- GIF abertura
-- Alertas
-- Brilho tela
-- Dash default
-- Buzzer
-- Update via OTA
-- Upload Gifs
-- Voltar
-
----
-
-## Dashboards
-
-O projeto possui múltiplos dashboards navegáveis pelo encoder.
-
-### Dash 1 - Ambiente
-
-Exibe:
-
-- Hora
-- Data
-- Temperatura ambiente
-- Umidade
-- Pressão atmosférica
-
-### Dash 2 - Motor
-
-Exibe:
+### Telas individuais de sensores
 
 - RPM
 - TPS
 - MAP
-- Bateria
-
-### Dash 3 - Sensores
-
-Exibe:
-
-- Temperatura do motor
-- Temperatura de admissão
-- Tempo de injeção
-- CO2 POT
-
-### Dash 4 - ECU
-
-Exibe:
-
+- CTS / temperatura do motor
+- IAT / temperatura de admissão
+- VBAT / tensão da bateria
 - Velocidade
-- Status da ECU
-- Pacotes recebidos
-- Erros de checksum
-
-### Dash 5 - Custom
-
-Exibe:
-
-- RPM
-- TPS
-- MAP
-- Velocidade
-
-### Dash 6 - Status
-
-Exibe:
-
-- Fan estimado
-- Motor ligado
+- IAC Steps
+- Tempo de injeção
+- Potenciômetro CO2
+- SPK / avanço de ignição
+- AFR desejado pela ECU
+- FAN estimado
+- VMOTOR
 - Tempo de motor ligado
-- ECU online/offline
 
 ---
 
-## Fan estimado
+## ⚠️ Alertas
 
-A flag de fan via ALDL não se mostrou confiável como status real no Monza, então o projeto usa um status estimado pela temperatura do motor.
-
-Exemplo:
-
-```cpp
-bool fanEstimado = tempMotor >= fanEstimadoLimite;
-```
-
-Por padrão:
-
-```cpp
-float fanEstimadoLimite = 100.0;
-```
-
-Esse status é exibido como indicador visual, não como confirmação real de acionamento elétrico da ventoinha.
-
----
-
-## Alertas
-
-O sistema possui alertas configuráveis pela tela **Alertas**.
-
-Alertas disponíveis:
+O sistema possui alertas configuráveis para:
 
 - Temperatura alta do motor
 - Tensão baixa da bateria
 - Shift Light por RPM
 
-Configurações principais:
+Quando um alerta é acionado, uma tela de aviso é exibida.
 
-```cpp
-bool alertaTempMotorAtivo = true;
-bool alertaTensaoAtivo = true;
-bool alertaShiftLightAtivo = true;
-
-float alertaTempMotorLimite = 105.0;
-float alertaTensaoMinima = 11.5;
-int alertaShiftLightRPM = 5500;
-```
-
-Os alertas só são disparados quando:
-
-- O sistema está em uma tela ALDL ou Dashboard.
-- Já existe frame ALDL válido.
-- A ECU está conectada.
-- A condição configurada foi atingida.
-
-Quando um alerta é disparado, ele aparece como tela cheia para evitar mistura visual com os dados ALDL.
+Na tela do mascote, os alertas são representados pelo próprio humor do Monzagotchi.
 
 ---
 
-## Shift Light
+## 🐾 Mascote / Monzagotchi
 
-O Shift Light é calculado por RPM configurável.
+O projeto possui uma tela de mascote inspirada em Tamagotchi, chamada **Monzagotchi**.
+
+O mascote fica no menu principal, junto com Dashboard, Sensores, Diagnóstico e Configuração.
+
+Menu principal:
+
+```txt
+Dashboard
+Sensores
+Diagnostico
+Mascote
+Configuracao
+```
+
+A tela do mascote também ativa a comunicação ALDL por trás, para que ele reaja aos dados reais do carro.
+
+### Estados do mascote
+
+| Estado | Condição |
+|---|---|
+| Dormindo | Sem frame válido da ECU / aguardando comunicação |
+| Feliz | Dados normais |
+| Andando | Velocidade maior que 0 |
+| Assustado | RPM acima do limite do Shift Light |
+| Triste | ECU offline |
+| Doente | Tensão baixa da bateria |
+| Quente | Temperatura do motor acima do limite de alerta |
+
+### Frases do mascote
+
+Exemplos de falas usadas na tela:
+
+- `ZzZ... esperando a ECU`
+- `Tudo certo no Monza!`
+- `Vrum vrum!`
+- `EITA RPM!`
+- `Cade a ECU?`
+- `Bateria fraca :(`
+- `To fritando!`
+
+### GIFs do mascote
+
+Os GIFs do mascote ficam na pasta:
+
+```txt
+/mascote/
+```
+
+Arquivos esperados:
+
+```txt
+/mascote/dormindo.gif
+/mascote/feliz.gif
+/mascote/andando.gif
+/mascote/assustado.gif
+/mascote/triste.gif
+/mascote/doente.gif
+/mascote/quente.gif
+```
+
+Se algum GIF ainda não foi enviado, a tela mostra um placeholder com o estado atual.
+
+### Upload dos GIFs do mascote
+
+Os GIFs podem ser enviados pelo próprio dashboard usando a tela:
+
+```txt
+Configuracao > Upload Gifs
+```
+
+O ESP32 cria uma rede Wi-Fi em modo AP. Depois basta acessar o IP informado na tela, normalmente:
+
+```txt
+192.168.4.1
+```
+
+Na página de upload existe uma área separada para enviar/substituir os GIFs de cada humor do mascote.
+
+---
+
+## 💾 Logs no cartão SD
+
+O projeto possui gravação de logs em CSV no cartão SD.
+
+Os logs são gravados somente quando:
+
+- A opção de logs está ativada
+- A tela atual usa dados ALDL
+- A ECU está conectada
+- Existe frame válido recebido
+- O intervalo configurado foi atingido
+
+Os arquivos são salvos na pasta:
+
+```txt
+/logs/
+```
+
+Formato do nome:
+
+```txt
+/logs/aldl_YYYYMMDD_HHMMSS.csv
+```
 
 Exemplo:
 
-```cpp
-if (alertaShiftLightAtivo && valorRPM >= alertaShiftLightRPM) {
-  desenharAlertaTela("SHIFT", "TROCAR MARCHA", ST77XX_YELLOW);
-}
+```txt
+/logs/aldl_20260512_213410.csv
 ```
 
-Isso evita depender de uma flag ALDL que pode não representar o status real no veículo.
+### Sensores disponíveis para log
+
+É possível escolher quais dados serão gravados:
+
+- RPM
+- TPS
+- MAP
+- CTS / temperatura do motor
+- VBAT / tensão da bateria
+- Velocidade
+- IAC Steps
+- Tempo de injeção
+- CO2 POT
+- SPK / avanço de ignição
+- AFR desejado
+- FAN estimado
+- VMOTOR
+- Tempo de motor ligado
+
+### Exemplo de CSV
+
+```csv
+millis,data,hora,rpm,tps_percent,map_v,cts_c,vbat_v,velocidade_kmh,iac_steps,injecao_ms,co2_v,spk_graus,afr_desejado,fan,vmotor,tempo_motor_s
+123456,12/05/2026,21:34:10,920,0.4,1.28,87.5,13.8,0,34,2.15,1.82,12.3,14.7,OFF,ON,754
+```
+
+### Limpeza automática
+
+Quando o cartão SD passa de aproximadamente **90% de uso**, o sistema começa a apagar os logs mais antigos até reduzir o uso para aproximadamente **80%**.
+
+Isso evita que o cartão fique cheio durante o uso.
 
 ---
 
-## Configurações salvas no SD
+## 📡 Upload OTA
 
-O projeto salva as configurações no arquivo:
+O projeto possui uma tela de atualização OTA via modo AP.
+
+Caminho:
+
+```txt
+Configuracao > Update via OTA
+```
+
+O ESP32 cria uma rede Wi-Fi própria e permite enviar o firmware pelo navegador.
+
+SSID padrão:
+
+```txt
+MonzaDash-OTA
+```
+
+Senha padrão:
+
+```txt
+12345678
+```
+
+IP padrão:
+
+```txt
+192.168.4.1
+```
+
+---
+
+## 🖼️ Upload de GIFs
+
+O projeto permite enviar GIFs para o cartão SD pelo navegador.
+
+Caminho:
+
+```txt
+Configuracao > Upload Gifs
+```
+
+A tela de upload permite:
+
+- Enviar GIF de abertura
+- Listar GIFs no SD
+- Visualizar prévia dos GIFs
+- Ver dimensão dos GIFs
+- Renomear GIFs
+- Deletar GIFs
+- Enviar/substituir GIFs do mascote por humor
+
+---
+
+## 🧩 Hardware utilizado
+
+### 🖥️ Display TFT ST7789
+
+Display TFT ST7789 SPI, 8 pinos.
+
+| Display TFT | ESP32 |
+|---|---|
+| VCC | 3.3V |
+| GND | GND |
+| SCL | GPIO 18 / SPI Clock |
+| SDA | GPIO 23 / SPI MOSI |
+| RES | GPIO 4 |
+| DC | GPIO 2 |
+| CS | GPIO 5 |
+| BLK | GPIO 32 ou 3.3V direto |
+
+---
+
+### 🔊 Buzzer passivo
+
+| Buzzer | ESP32 |
+|---|---|
+| + | GPIO 33 |
+| - | GND |
+
+---
+
+### ⏰ RTC DS3231
+
+| DS3231 | ESP32 |
+|---|---|
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+| VCC | 5V |
+| GND | GND |
+
+---
+
+### 🌡️ BME280
+
+| BME280 | ESP32 |
+|---|---|
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+| VCC | 3.3V |
+| GND | GND |
+
+---
+
+### 🧭 GY-521 / MPU6050
+
+| GY-521 / MPU6050 | ESP32 |
+|---|---|
+| SDA | GPIO 21 |
+| SCL | GPIO 22 |
+| VCC | 3.3V |
+| GND | GND |
+
+---
+
+### 💾 MicroSD
+
+| MicroSD | ESP32 |
+|---|---|
+| CLK / SCK | GPIO 18 |
+| MOSI | GPIO 23 |
+| MISO | GPIO 19 |
+| CS | GPIO 13 |
+| VCC | 3.3V |
+| GND | GND |
+
+---
+
+### 🔘 Encoder KY-040
+
+| KY-040 | ESP32 |
+|---|---|
+| CLK | GPIO 25 |
+| DT | GPIO 26 |
+| SW | GPIO 27 |
+| VCC | 3.3V |
+| GND | GND |
+
+---
+
+## 🚗 Ligações com o carro
+
+| Sinal do carro | ESP32 / circuito |
+|---|---|
+| 5V pós-regulador | VIN do ESP32 |
+| GND | GND do ESP32 |
+| Iluminação 12V | GPIO 34 |
+| ALDL RX | GPIO 16 |
+| ALDL TX | GPIO 17 |
+
+> Observação: a linha ALDL do carro não deve ser ligada diretamente ao ESP32 sem o circuito de interface/proteção usado no projeto.
+
+---
+
+## 🔋 Alimentação
+
+A alimentação do projeto é feita a partir dos 12V do carro usando um conversor buck LM2596.
+
+```txt
+12V do carro -> LM2596
+Saída 5V LM2596 -> VIN do ESP32
+Saída 5V LM2596 -> DS3231
+3.3V do ESP32 -> Display, BME280, MPU6050, MicroSD e Encoder
+GND comum para todos os módulos
+```
+
+### Filtro contra ruído no LM2596
+
+Para reduzir ruídos/interferências na alimentação e melhorar a estabilidade da leitura ALDL, foram adicionados capacitores no circuito do LM2596.
+
+Capacitores utilizados:
+
+| Capacitor | Posição sugerida | Função |
+|---|---|---|
+| 470µF / 25V eletrolítico | Entrada 12V do LM2596 | Ajuda a absorver quedas e oscilações da alimentação do carro |
+| 10µF / 16V eletrolítico | Saída 5V do LM2596 | Ajuda a suavizar a saída de 5V |
+| 100nF cerâmico | Próximo ao ESP32 e/ou sensores | Ajuda a filtrar ruído de alta frequência |
+| 100nF cerâmico | Próximo ao módulo MicroSD | Ajuda na estabilidade durante leitura/gravação no SD |
+
+Ligação recomendada:
+
+```txt
+12V carro  ----+---- LM2596 IN+
+               |
+             470µF
+               |
+GND carro  ----+---- LM2596 IN-
+
+LM2596 OUT+ ----+---- VIN ESP32
+                |
+              10µF
+                |
+GND comum  -----+---- GND ESP32
+```
+
+Também é recomendado manter o GND comum entre:
+
+- ESP32
+- LM2596
+- Display
+- Sensores
+- MicroSD
+- RTC
+- Circuito de interface ALDL
+
+---
+
+## 🔌 Barramento I2C
+
+O projeto compartilha o mesmo barramento I2C entre:
+
+- DS3231
+- BME280
+- MPU6050
+
+Pinos usados:
+
+```txt
+SDA -> GPIO 21
+SCL -> GPIO 22
+```
+
+Endereços comuns:
+
+```txt
+DS3231  -> 0x68
+BME280  -> 0x76
+MPU6050 -> 0x69
+```
+
+---
+
+## 🧠 ALDL
+
+Configuração da comunicação:
+
+```txt
+Baud rate: 8192
+RX: GPIO 16
+TX: GPIO 17
+```
+
+Comandos usados:
+
+```txt
+Shutup request:
+F4 56 08 AE
+
+Data stream request:
+F4 57 01 00 B4
+
+Clear DTC request:
+F4 57 0A 00 AB
+```
+
+Frame esperado:
+
+```txt
+Header: F4 95 01
+Payload: 63 bytes
+Checksum: 1 byte
+Total: 67 bytes
+```
+
+---
+
+## 🧯 Códigos de falha monitorados
+
+A tela de códigos ECU monitora falhas baseadas nos bytes de malfunction word.
+
+Exemplos:
+
+- Erro 12 - Sem pulsos de referência
+- Erro 14 - Sensor de temperatura / curto massa
+- Erro 15 - Sensor de temperatura / chicote
+- Erro 21 - TPS voltagem alta
+- Erro 22 - TPS voltagem baixa
+- Erro 24 - Sem sinal sensor velocidade
+- Erro 32 - Falha sistema EGR
+- Erro 33 - MAP sinal alto
+- Erro 34 - MAP sinal baixo
+- Erro 35 - Atuador IAC
+- Erro 42 - Módulo HEI
+- Erro 51 - Unidade comando / MEM-CAL
+- Erro 54 - Potenciômetro CO2
+- Erro 55 - Unidade comando defeito
+
+---
+
+## ⚙️ Configurações salvas no SD
+
+As configurações são salvas no arquivo:
 
 ```txt
 /config.json
 ```
 
-Configurações salvas:
+Exemplos de dados salvos:
 
 - Brilho dia
 - Brilho noite
@@ -379,358 +606,81 @@ Configurações salvas:
 - Modo do buzzer
 - Polling ALDL
 - Dashboard inicial
-- Alertas ativos
-- Limite de temperatura
-- Tensão mínima
-- RPM do Shift Light
-
-Exemplo de estrutura:
-
-```json
-{
-  "brilhoDia": 255,
-  "brilhoNoite": 80,
-  "gif": "abertura.gif",
-  "fEnc": 1200,
-  "fCli": 2000,
-  "fSuc": 2500,
-  "fErr": 800,
-  "modoBuzzer": 1,
-  "aldlPollingMs": 100,
-  "dashInicialDefault": -1,
-  "alertaTempMotorAtivo": true,
-  "alertaTensaoAtivo": true,
-  "alertaShiftLightAtivo": true,
-  "alertaTempMotorLimite": 105.0,
-  "alertaTensaoMinima": 11.5,
-  "alertaShiftLightRPM": 5500
-}
-```
+- Alertas
+- Intervalos de atualização da UI
+- Logs SD
+- Sensores selecionados para log
 
 ---
 
-## Dashboard inicial
-
-Na tela **Dash default**, é possível escolher se o projeto deve iniciar diretamente em um dashboard ao ligar.
-
-Opções:
-
-| Valor | Comportamento |
-|---:|---|
-| -1 | Nenhum, abre no menu principal |
-| 0 | Dash 1 - Ambiente |
-| 1 | Dash 2 - Motor |
-| 2 | Dash 3 - Sensores |
-| 3 | Dash 4 - ECU |
-| 4 | Dash 5 - Custom |
-| 5 | Dash 6 - Status |
-
----
-
-## GIF de abertura
-
-O projeto pode exibir um GIF de abertura salvo no cartão SD.
-
-Recomendações:
-
-- Formato: `.gif`
-- Resolução: `280x240`
-- Salvar na raiz do SD
-- Usar nomes simples, sem espaços ou caracteres especiais
-
-Exemplos:
-
-```txt
-/abertura.gif
-/monza.gif
-/gm.gif
-```
-
-A tela **GIF abertura** lista os arquivos `.gif` encontrados no SD e permite selecionar qual será exibido ao iniciar.
-
----
-
-## Upload de GIFs via Wi-Fi
-
-A tela **Upload Gifs** inicia um Access Point no ESP32 e permite enviar arquivos `.gif` pelo navegador.
-
-Configuração padrão:
-
-```cpp
-String otaSSID = "MonzaDash-OTA";
-String otaSenha = "12345678";
-```
-
-Fluxo de uso:
-
-1. Entrar em `Configuração > Upload Gifs`.
-2. Conectar no Wi-Fi `MonzaDash-OTA`.
-3. Abrir no navegador:
-
-```txt
-http://192.168.4.1
-```
-
-4. Selecionar um arquivo `.gif`.
-5. Enviar.
-6. O arquivo será salvo no cartão SD.
-7. Depois selecionar em `Configuração > GIF abertura`.
-
----
-
-## Atualização OTA
-
-A tela **Update via OTA** inicia o modo Access Point e permite atualizar o firmware `.bin` pelo navegador.
-
-Fluxo de uso:
-
-1. Entrar em `Configuração > Update via OTA`.
-2. Conectar no Wi-Fi `MonzaDash-OTA`.
-3. Abrir no navegador:
-
-```txt
-http://192.168.4.1
-```
-
-4. Selecionar o arquivo `.bin`.
-5. Enviar.
-6. O ESP32 reinicia após a atualização.
-
----
-
-## Buzzer
-
-O sistema usa buzzer para feedback de navegação e eventos.
-
-Configurações disponíveis:
-
-- Mudo
-- Simples
-- Duplo
-- Frequência do encoder
-- Frequência de clique
-- Frequência de sucesso
-- Frequência de erro
-
-Pino usado:
-
-```cpp
-#define PIN_BUZZER 33
-```
-
----
-
-## Iluminação e brilho
-
-O projeto lê o sinal de iluminação no GPIO 34:
-
-```cpp
-#define PIN_ILUMINACAO 34
-```
-
-Esse sinal pode ser usado para diferenciar brilho de dia e brilho de noite.
-
-Configurações:
-
-```cpp
-int brilhoDia = 255;
-int brilhoNoite = 255;
-```
-
----
-
-## Sensores auxiliares
-
-### BME280
-
-Usado para:
-
-- Temperatura ambiente
-- Umidade
-- Pressão atmosférica
-- Altitude estimada
-
-Endereço I2C usado:
-
-```txt
-0x76
-```
-
-### MPU6050
-
-Usado para:
-
-- Acelerômetro
-- Giroscópio
-- Temperatura interna do sensor
-
-Endereço I2C usado:
-
-```txt
-0x69
-```
-
-### DS3231
-
-Usado para manter data e hora.
-
-Endereço comum:
-
-```txt
-0x68
-```
-
----
-
-## Cartão SD
-
-O SD é usado para:
-
-- `config.json`
-- GIFs de abertura
-- Futuro armazenamento de logs
-
-Pino CS:
-
-```cpp
-#define SD_CS 13
-```
-
-Formato recomendado:
-
-```txt
-FAT32
-```
-
-Estrutura sugerida:
+## 📁 Estrutura sugerida do cartão SD
 
 ```txt
 /
 ├── config.json
 ├── abertura.gif
-├── monza.gif
-├── gm.gif
-└── outros_gifs.gif
+├── logs/
+│   ├── aldl_20260512_213410.csv
+│   └── aldl_20260512_214020.csv
+└── mascote/
+    ├── dormindo.gif
+    ├── feliz.gif
+    ├── andando.gif
+    ├── assustado.gif
+    ├── triste.gif
+    ├── doente.gif
+    └── quente.gif
 ```
 
 ---
 
-## Compilação
+## 🛠️ Bibliotecas usadas
 
-O projeto pode ser compilado usando Arduino IDE ou GitHub Actions.
-
-### Arduino IDE
-
-Configuração recomendada:
-
-- Board: ESP32 Dev Module
-- Upload Speed: 921600 ou 115200
-- Partition Scheme: compatível com OTA
-- Flash Frequency: 80 MHz
-- Core Debug Level: None
-
-### Geração de `.bin`
-
-Na Arduino IDE:
-
-```txt
-Sketch > Export Compiled Binary
-```
-
-O arquivo `.bin` gerado pode ser usado no OTA.
+- Wire
+- SPI
+- SD
+- ArduinoJson
+- AnimatedGIF
+- Adafruit GFX
+- Adafruit ST7789
+- Adafruit BME280
+- Adafruit MPU6050
+- Adafruit Sensor
+- RTClib
+- WiFi
+- WebServer
+- Update
+- vector
 
 ---
 
-## OTA via release
+## 📌 Observações importantes
 
-Uma forma prática de distribuir firmware é gerar o `.bin` e anexar em uma release do GitHub.
-
-Fluxo sugerido:
-
-1. Compilar o projeto.
-2. Gerar o `.bin`.
-3. Criar uma release.
-4. Anexar o `.bin`.
-5. Baixar pelo celular ou notebook.
-6. Enviar pelo OTA do dashboard.
-
----
-
-## Observações importantes
-
-### ALDL
-
-O ALDL do Monza/Multec 700 pode variar de acordo com versão de ECU, calibração e XDF usado. Algumas flags podem existir no XDF mas não representar status real em tempo real no veículo.
-
-Por isso, o projeto prioriza leituras confirmadas na prática, como:
-
-- RPM
-- TPS
-- MAP
-- CTS
-- Bateria
-- Tempo de injeção
-- CO2 POT
-- Velocidade
-- Tempo de motor ligado
-
-### Fan
-
-O status de fan é estimado por temperatura, pois a flag analisada não alterou quando a ventoinha armou em testes com EFILive V4.
-
-### Shift Light
-
-O Shift Light é configurável por RPM, em vez de depender de flag ALDL.
-
-### Tela
-
-Para reduzir flicker, as telas devem evitar `fillScreen()` constante e preferir limpar apenas as áreas que mudam.
+- A linha ALDL precisa de circuito de interface/proteção.
+- O ESP32 trabalha em 3.3V.
+- Não ligar sinais automotivos de 12V diretamente no ESP32.
+- Usar GND comum entre todos os módulos.
+- O cartão SD deve estar formatado corretamente.
+- GIFs muito grandes podem afetar desempenho.
+- Para melhor desempenho, prefira GIFs pequenos e próximos da resolução usada na tela.
+- O AFR exibido é o AFR desejado/calculado pela ECU, não leitura real de wideband.
+- No Monza EFI sem sonda, alguns dados podem ser fixos ou estimados dependendo da ECU.
 
 ---
 
-## Roadmap
+## 🧪 Status atual
 
-Ideias futuras:
+O projeto está em desenvolvimento e testes reais no carro.
 
-- Tela de tempos UI configuráveis
-- Log de dados ALDL no SD
-- Exportação CSV
-- Tela gráfica de RPM, MAP e TPS
-- Tela de diagnóstico de ruído ALDL
-- Configuração do limite do fan estimado
-- Melhor página web para gerenciar GIFs
-- Exclusão de GIFs pelo navegador
-- Seleção de GIF via página web
-- Modo Wi-Fi client para buscar hora via NTP
-- OTA em modo client além de AP mode
-
----
-
-## Status do projeto
-
-Em desenvolvimento.
-
-Funcionalidades atuais:
+Funcionalidades já implementadas:
 
 - Leitura ALDL
 - Dashboards
-- Sensores auxiliares
-- Configuração via menu
-- Alertas
-- OTA
+- Telas de sensores
+- Logs SD
 - Upload de GIFs
-- Configuração persistente via SD
-
----
-
-## Autor
-
-Projeto desenvolvido por Guilherme Monteiro para o Chevrolet Monza GLS 1996 2.0 EFI com ECU Multec 700.
-
----
-
-## Aviso
-
-Este projeto é experimental e automotivo. Faça ligações elétricas com cuidado, use proteção adequada contra ruído, fusíveis, aterramento correto e conversores de tensão confiáveis.
-
-O uso no veículo é por conta e risco do instalador.
+- Mascote por humor
+- OTA via AP
+- G-Force
+- Alertas
+- Configurações persistentes no SD

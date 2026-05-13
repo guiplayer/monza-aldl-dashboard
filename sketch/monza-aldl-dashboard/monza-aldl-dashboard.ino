@@ -84,6 +84,15 @@
 #define TELA_DASH_DEFAULT     26
 #define TELA_UPLOAD_GIFS      27
 #define TELA_TEMPOS_UI        28
+#define TELA_VELOCIDADE       29
+#define TELA_IAC              30
+#define TELA_SPK              31
+#define TELA_AFR              32
+#define TELA_FAN              33
+#define TELA_VMOTOR           34
+#define TELA_TEMPO_MOTOR      35
+#define TELA_LOGS_SD          36
+#define TELA_MASCOTE          37
 
 // =======================
 // OBJETOS
@@ -131,15 +140,15 @@ struct Menu {
   Menu* parent;
 };
 
-const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Configuracao"};
-const char* submenuSensores[] = {"TPS","MAP","CTS (temp motor)","IAT (temp admissao)","Voltimetro","RPM","Tempo de injecao","CO2 POT","Voltar"};
+const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Mascote","Configuracao"};
+const char* submenuSensores[] = {"RPM","TPS","MAP","CTS Temp Motor","IAT Temp Adm","VBAT","Velocidade","IAC Steps","Tempo Injecao","CO2 POT","SPK Avanco","AFR Desejado","FAN","VMOTOR","Tempo Motor","Voltar"};
 const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status MPU","Status BME","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
-const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Tempos UI","Update via OTA","Upload Gifs","Voltar"};
+const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Tempos UI","Logs SD","Update via OTA","Upload Gifs","Voltar"};
 
-Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 4, nullptr };
-Menu menuSensores = { "Sensores", submenuSensores, 9, &menuPrincipal };
+Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 5, nullptr };
+Menu menuSensores = { "Sensores", submenuSensores, 16, &menuPrincipal };
 Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 11, &menuPrincipal };
-Menu menuConfig = { "Configuracao", submenuConfig, 10, &menuPrincipal };
+Menu menuConfig = { "Configuracao", submenuConfig, 11, &menuPrincipal };
 
 Menu* menuAtual = &menuPrincipal;
 int menuIndex = 0;
@@ -220,6 +229,40 @@ String ecuModuloCodigo = "";
 String ecuModuloNome = "";
 String ecuModuloDescricao = "";
 
+// =======================
+// LOGS SD
+// =======================
+const char* LOGS_DIR = "/logs";
+const char* MASCOTE_DIR = "/mascote";
+
+bool logsSdAtivo = false;
+unsigned long logsSdIntervaloMs = 1000;
+unsigned long logsSdUltimaGravacao = 0;
+unsigned long logsSdUltimaLimpeza = 0;
+
+bool logsSdSessaoAberta = false;
+String logsSdArquivoAtual = "";
+File logsSdFile;
+
+bool logRPM = true;
+bool logTPS = true;
+bool logMAP = true;
+bool logCTS = true;
+bool logVBAT = true;
+bool logVelocidade = true;
+bool logIAC = true;
+bool logInjecao = true;
+bool logCO2 = true;
+bool logSPK = true;
+bool logAFR = true;
+bool logFan = true;
+bool logVMotor = true;
+bool logTempoMotor = true;
+
+uint64_t logsSdBytesGravadosSessao = 0;
+int logsSdLinhasSessao = 0;
+String logsSdStatusMsg = "Logs desligados";
+
 
 // Variaveis Gforce
 float gLateral = 0.0f;
@@ -272,6 +315,39 @@ int cacheHeaderDashAtual = -1;
 
 // Nome arquivo json
 const char* configFile = "/config.json";
+
+
+// Variaveis mascote
+enum EstadoMascote {
+  MASCOTE_DORMINDO,
+  MASCOTE_FELIZ,
+  MASCOTE_ANDANDO,
+  MASCOTE_ASSUSTADO,
+  MASCOTE_TRISTE,
+  MASCOTE_DOENTE,
+  MASCOTE_QUENTE
+};
+
+EstadoMascote estadoMascoteAtual = MASCOTE_DORMINDO;
+EstadoMascote ultimoEstadoMascote = MASCOTE_DORMINDO;
+
+String gifMascoteDormindo = "/mascote/dormindo.gif";
+String gifMascoteFeliz = "/mascote/feliz.gif";
+String gifMascoteAndando = "/mascote/andando.gif";
+String gifMascoteAssustado = "/mascote/assustado.gif";
+String gifMascoteTriste = "/mascote/triste.gif";
+String gifMascoteDoente = "/mascote/doente.gif";
+String gifMascoteQuente = "/mascote/quente.gif";
+
+bool mascoteGifAberto = false;
+bool mascoteGifExiste = false;
+String mascoteGifAtual = "";
+EstadoMascote mascoteEstadoGifAberto = MASCOTE_DORMINDO;
+
+const int MASCOTE_GIF_X = 40;
+const int MASCOTE_GIF_Y = 48;
+const int MASCOTE_GIF_W = 200;
+const int MASCOTE_GIF_H = 125;
 
 // ======================================================
 // ALDL MULTEC 700
@@ -382,6 +458,39 @@ void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* 
 void dashboardGForce();
 void atualizarGForce();
 void calibrarGForce();
+void telaLogsSD();
+void loopLogsSD();
+void iniciarSessaoLogSD();
+void fecharLogSD();
+void escreverCabecalhoLogSD(File &file);
+void escreverLinhaLogSD(File &file);
+bool garantirPastaLogs();
+void limparLogsSeNecessario();
+bool apagarLogMaisAntigo();
+uint64_t calcularTamanhoPasta(const char* caminho);
+int contarArquivosLogs();
+String formatarBytesSD(uint64_t bytes);
+void apagarTodosLogs();
+void desenharLinhaLogOpcao(int y, const char* nome, bool valor, bool selecionado);
+void desenharLinhaLogValor(int y, const char* nome, unsigned long valor, const char* unidade, bool selecionado);
+void desenharLinhaLogTexto(int y, const char* nome, const char* valor, bool selecionado);
+
+// MASCOTE
+void telaMascote();
+void atualizarEstadoMascote();
+const char* obterNomeEstadoMascote();
+const char* obterFalaMascote();
+String obterGifMascoteAtual();
+bool garantirPastaMascote();
+String obterCaminhoGifMascotePorHumor(String humor);
+String obterNomeHumorMascote(String humor);
+String montarHtmlMascoteGifs();
+
+void fecharGifMascote();
+bool abrirGifMascote(String caminho);
+void tocarFrameGifMascote();
+void prepararEscalaGifArea(String nomeArquivo, int areaX, int areaY, int areaW, int areaH);
+void desenharPlaceholderMascote(const char* texto);
 
 // ALDL
 void limparEstadoALDL();
@@ -432,6 +541,14 @@ void telaSensorIAT();
 void telaSensorVoltimetro();
 void telaSensorRPM();
 void telaSensorTempoInjecao();
+void telaSensorValorCentral(const char* titulo, const char* subtitulo, const char* valor, const char* unidade, uint16_t cor);
+void telaSensorVelocidade();
+void telaSensorIAC();
+void telaSensorSPK();
+void telaSensorAFR();
+void telaSensorFan();
+void telaSensorVMotor();
+void telaSensorTempoMotor();
 
 // GIFS
 void prepararEscalaGif(String nomeArquivo);
@@ -503,6 +620,14 @@ void loop() {
     }
   }
 
+  if (logsSdAtivo && estadoUI == TELA_UI && telaEhSensorALDL(telaAtiva)) {
+    loopLogsSD();
+  } else {
+    if (logsSdSessaoAberta) {
+      fecharLogSD();
+    }
+  }
+
   if (estadoUI == TELA_UI && telaAtiva == TELA_OTA) {
     loopOTA();
   }
@@ -553,6 +678,7 @@ void loop() {
 bool verificarAlertas() {
   if (estadoUI != TELA_UI) return false;
   if (!telaEhSensorALDL(telaAtiva)) return false;
+  if (telaAtiva == TELA_MASCOTE) return false;
 
   // Nao dispara alerta antes do primeiro frame valido
   if (!aldlPrimeiroFrameOk) return false;
@@ -696,6 +822,7 @@ void desenharAlertaTela(const char* titulo, const char* mensagem, uint16_t corFu
 // FUNÇÕES DE MENU E ENCODER
 // =======================
 void desenharMenu() {
+  limparCacheDashboard();
   tft.fillScreen(ST77XX_BLACK);
 
   int screenW = tft.width();
@@ -730,7 +857,8 @@ void desenharMenu() {
         case 0: bitmap = icone_dash; break;
         case 1: bitmap = icone_sensor; break;
         case 2: bitmap = icone_engine; break;
-        case 3: bitmap = icone_config; break;
+        case 3: bitmap = icone_mascote; break;
+        case 4: bitmap = icone_config; break;
       }
 
       if (bitmap != nullptr) {
@@ -756,22 +884,12 @@ void lerEncoder() {
     cliqueDetectado = true;
 
     if (estadoUI == TELA_UI &&
+      !telaEhSensorALDL(telaAtiva) &&
       telaAtiva != TELA_AJUSTAR_HORA &&
       telaAtiva != TELA_AJUSTE_BRILHO &&
       telaAtiva != TELA_CONFIG_BUZZER &&
       telaAtiva != TELA_SELECIONAR_GIF &&
-      telaAtiva != TELA_ALDL &&
-      telaAtiva != TELA_TPS &&
-      telaAtiva != TELA_MAP &&
-      telaAtiva != TELA_CTS &&
-      telaAtiva != TELA_IAT &&
-      telaAtiva != TELA_VOLT &&
-      telaAtiva != TELA_RPM &&
-      telaAtiva != TELA_TEMPO_INJECAO &&
       telaAtiva != TELA_OTA &&
-      telaAtiva != TELA_CO2 &&
-      telaAtiva != TELA_CODIGOS_ECU &&
-      telaAtiva != TELA_LIMPAR_ECU &&
       telaAtiva != TELA_MPU &&
       telaAtiva != TELA_BME &&
       telaAtiva != TELA_TESTE_I2C &&
@@ -780,6 +898,7 @@ void lerEncoder() {
       telaAtiva != TELA_TESTE_DISPLAY &&
       telaAtiva != TELA_UPLOAD_GIFS &&
       telaAtiva != TELA_TEMPOS_UI &&
+      telaAtiva != TELA_LOGS_SD &&
       telaAtiva != TELA_DASH_DEFAULT) {
 
       estadoUI = MENU_UI;
@@ -820,22 +939,52 @@ void selecionarItemMenu() {
   }
 
   if (menuAtual == &menuPrincipal) {
-    if (menuIndex == 0)      { telaAtiva = TELA_DASHBOARD;  estadoUI = TELA_UI; }
-    else if (menuIndex == 1) { menuAtual = &menuSensores;    menuIndex = 0; }
-    else if (menuIndex == 2) { menuAtual = &menuDiagnostico; menuIndex = 0; }
-    else if (menuIndex == 3) { menuAtual = &menuConfig;      menuIndex = 0; }
+    if (menuIndex == 0) {
+      telaAtiva = TELA_DASHBOARD;
+      estadoUI = TELA_UI;
+
+      limparCacheDashboard();
+      forcarRedesenhoTela = true;
+      ultimoUpdate = 0;
+    }
+    else if (menuIndex == 1) {
+      menuAtual = &menuSensores;
+      menuIndex = 0;
+    }
+    else if (menuIndex == 2) {
+      menuAtual = &menuDiagnostico;
+      menuIndex = 0;
+    }
+    else if (menuIndex == 3) {
+      telaAtiva = TELA_MASCOTE;
+      estadoUI = TELA_UI;
+
+      forcarRedesenhoTela = true;
+      ultimoUpdate = 0;
+    }
+    else if (menuIndex == 4) {
+      menuAtual = &menuConfig;
+      menuIndex = 0;
+    }
   }
 
   else if (menuAtual == &menuSensores) {
-    if (menuIndex == 0)      { telaAtiva = TELA_TPS; estadoUI = TELA_UI; }
-    else if (menuIndex == 1) { telaAtiva = TELA_MAP; estadoUI = TELA_UI; }
-    else if (menuIndex == 2) { telaAtiva = TELA_CTS; estadoUI = TELA_UI; }
-    else if (menuIndex == 3) { telaAtiva = TELA_IAT; estadoUI = TELA_UI; }
-    else if (menuIndex == 4) { telaAtiva = TELA_VOLT; estadoUI = TELA_UI; }
-    else if (menuIndex == 5) { telaAtiva = TELA_RPM; estadoUI = TELA_UI; }
-    else if (menuIndex == 6) { telaAtiva = TELA_TEMPO_INJECAO; estadoUI = TELA_UI; }
-    else if (menuIndex == 7) { telaAtiva = TELA_CO2; estadoUI = TELA_UI; }
-  }
+  if (menuIndex == 0)       { telaAtiva = TELA_RPM; estadoUI = TELA_UI; }
+  else if (menuIndex == 1)  { telaAtiva = TELA_TPS; estadoUI = TELA_UI; }
+  else if (menuIndex == 2)  { telaAtiva = TELA_MAP; estadoUI = TELA_UI; }
+  else if (menuIndex == 3)  { telaAtiva = TELA_CTS; estadoUI = TELA_UI; }
+  else if (menuIndex == 4)  { telaAtiva = TELA_IAT; estadoUI = TELA_UI; }
+  else if (menuIndex == 5)  { telaAtiva = TELA_VOLT; estadoUI = TELA_UI; }
+  else if (menuIndex == 6)  { telaAtiva = TELA_VELOCIDADE; estadoUI = TELA_UI; }
+  else if (menuIndex == 7)  { telaAtiva = TELA_IAC; estadoUI = TELA_UI; }
+  else if (menuIndex == 8)  { telaAtiva = TELA_TEMPO_INJECAO; estadoUI = TELA_UI; }
+  else if (menuIndex == 9)  { telaAtiva = TELA_CO2; estadoUI = TELA_UI; }
+  else if (menuIndex == 10) { telaAtiva = TELA_SPK; estadoUI = TELA_UI; }
+  else if (menuIndex == 11) { telaAtiva = TELA_AFR; estadoUI = TELA_UI; }
+  else if (menuIndex == 12) { telaAtiva = TELA_FAN; estadoUI = TELA_UI; }
+  else if (menuIndex == 13) { telaAtiva = TELA_VMOTOR; estadoUI = TELA_UI; }
+  else if (menuIndex == 14) { telaAtiva = TELA_TEMPO_MOTOR; estadoUI = TELA_UI; }
+}
 
   else if (menuAtual == &menuDiagnostico) {
     if (menuIndex == 0)      { telaAtiva = TELA_ALDL;          estadoUI = TELA_UI; }
@@ -858,8 +1007,9 @@ void selecionarItemMenu() {
     else if (menuIndex == 4) { telaAtiva = TELA_DASH_DEFAULT; estadoUI = TELA_UI; }
     else if (menuIndex == 5) { telaAtiva = TELA_CONFIG_BUZZER; estadoUI = TELA_UI; }
     else if (menuIndex == 6) { telaAtiva = TELA_TEMPOS_UI; estadoUI = TELA_UI; }
-    else if (menuIndex == 7) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
-    else if (menuIndex == 8) { telaAtiva = TELA_UPLOAD_GIFS; estadoUI = TELA_UI; }
+    else if (menuIndex == 7) { telaAtiva = TELA_LOGS_SD; estadoUI = TELA_UI; }
+    else if (menuIndex == 8) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
+    else if (menuIndex == 9) { telaAtiva = TELA_UPLOAD_GIFS; estadoUI = TELA_UI; }
   }
 
   if (estadoUI == MENU_UI) {
@@ -907,12 +1057,21 @@ void atualizarTela() {
     case TELA_RPM:            telaSensorRPM(); break;
     case TELA_TEMPO_INJECAO:  telaSensorTempoInjecao(); break;
     case TELA_CO2:           telaSensorCO2(); break;
+    case TELA_VELOCIDADE:    telaSensorVelocidade(); break;
+    case TELA_IAC:           telaSensorIAC(); break;
+    case TELA_SPK:           telaSensorSPK(); break;
+    case TELA_AFR:           telaSensorAFR(); break;
+    case TELA_FAN:           telaSensorFan(); break;
+    case TELA_VMOTOR:        telaSensorVMotor(); break;
+    case TELA_TEMPO_MOTOR:   telaSensorTempoMotor(); break;
     case TELA_CODIGOS_ECU:    telaCodigosECU(); break;
     case TELA_LIMPAR_ECU: telaLimparErrosECU(); break;
     case TELA_ALERTAS: telaAlerta(); break;
     case TELA_DASH_DEFAULT: telaDashDefault(); break;
     case TELA_UPLOAD_GIFS: telaUploadGifs(); break;
     case TELA_TEMPOS_UI: telaTemposUI(); break;
+    case TELA_LOGS_SD: telaLogsSD(); break;
+    case TELA_MASCOTE: telaMascote(); break;
   }
 }
 
@@ -936,284 +1095,45 @@ void desenharRodapeSensor() {
 }
 
 void telaSensorTPS() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("TPS");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -99999;
-  }
-
-  if (ultimoValor != valorTPS) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(80, 70);
-    tft.print("ABERTURA");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(55, 115);
-    tft.printf("%.1f%%", valorTPS);
-
-    ultimoValor = valorTPS;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", valorTPS);
+  telaSensorValorCentral("TPS", "Abertura borboleta", valor, "%", ST77XX_CYAN);
 }
 
 void telaSensorMAP() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("MAP");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
-
-  float valorTela = round(valorMAP * 100.0f) / 100.0f;
-
-  if (ultimoValor != valorTela) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(60, 70);
-    tft.print("MAP SENSOR");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(45, 115);
-    tft.printf("%.2f", valorTela);
-
-    tft.setTextSize(2);
-    tft.setCursor(105, 175);
-    tft.print("V");
-
-    ultimoValor = valorTela;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.2f", valorMAP);
+  telaSensorValorCentral("MAP", "Sensor MAP", valor, "V", ST77XX_CYAN);
 }
 
 void telaSensorCTS() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("CTS");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
-
-  if (ultimoValor != tempMotor) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(35, 70);
-    tft.print("TEMP. DO MOTOR");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(50, 115);
-    tft.printf("%.1f", tempMotor);
-
-    tft.setTextSize(2);
-    tft.setCursor(170, 175);
-    tft.print("C");
-
-    ultimoValor = tempMotor;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", tempMotor);
+  telaSensorValorCentral("CTS", "Temperatura motor", valor, "C", ST77XX_RED);
 }
 
 void telaSensorIAT() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("IAT");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
-
-  if (ultimoValor != tempAdmissao) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(20, 70);
-    tft.print("TEMP. ADMISSAO");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(50, 115);
-    tft.printf("%.1f", tempAdmissao);
-
-    tft.setTextSize(2);
-    tft.setCursor(170, 175);
-    tft.print("C");
-
-    ultimoValor = tempAdmissao;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", tempAdmissao);
+  telaSensorValorCentral("IAT", "Temperatura admissao", valor, "C", ST77XX_ORANGE);
 }
 
 void telaSensorVoltimetro() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("VOLTIMETRO");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
-
-  if (ultimoValor != voltagem) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(65, 70);
-    tft.print("BATERIA");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(45, 115);
-    tft.printf("%.1f", voltagem);
-
-    tft.setTextSize(2);
-    tft.setCursor(175, 175);
-    tft.print("V");
-
-    ultimoValor = voltagem;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", voltagem);
+  telaSensorValorCentral("VBAT", "Tensao bateria", valor, "V", ST77XX_ORANGE);
 }
 
 void telaSensorRPM() {
-  static bool iniciado = false;
-  static int ultimoValor = -99999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("RPM");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -99999;
-  }
-
-  if (ultimoValor != valorRPM) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(95, 70);
-    tft.print("GIRO");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(35, 115);
-    tft.print(valorRPM);
-
-    ultimoValor = valorRPM;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -99999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%d", valorRPM);
+  telaSensorValorCentral("RPM", "Giro do motor", valor, "rpm", ST77XX_YELLOW);
 }
 
 void telaSensorTempoInjecao() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
-
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("TEMPO INJECAO");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
-
-  if (ultimoValor != tempoInjecao) {
-    tft.fillRect(0, 70, 280, 120, ST77XX_BLACK);
-
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 70);
-    tft.print("BICO ABERTO");
-
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(45, 115);
-    tft.printf("%.2f", tempoInjecao);
-
-    tft.setTextSize(2);
-    tft.setCursor(170, 175);
-    tft.print("ms");
-
-    ultimoValor = tempoInjecao;
-  }
-
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.2f", tempoInjecao);
+  telaSensorValorCentral("INJECAO", "Tempo de injecao", valor, "ms", ST77XX_GREEN);
 }
 
 
@@ -1409,15 +1329,30 @@ void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char
     tft.fillRoundRect(x, y, w, h, 6, ST77XX_BLACK);
     tft.drawRoundRect(x, y, w, h, 6, cor);
 
+    int16_t x1, y1;
+    uint16_t tw, th;
+
+    // Titulo centralizado
     tft.setTextSize(1);
     tft.setTextColor(cor, ST77XX_BLACK);
-    tft.setCursor(x + 8, y + 8);
+    tft.getTextBounds(titulo, 0, 0, &x1, &y1, &tw, &th);
+
+    int tituloX = x + ((w - tw) / 2);
+    if (tituloX < x + 4) tituloX = x + 4;
+
+    tft.setCursor(tituloX, y + 8);
     tft.print(titulo);
 
+    // Unidade centralizada
     if (strlen(unidade) > 0) {
       tft.setTextSize(1);
       tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
-      tft.setCursor(x + 8, y + h - 14);
+      tft.getTextBounds(unidade, 0, 0, &x1, &y1, &tw, &th);
+
+      int unidadeX = x + ((w - tw) / 2);
+      if (unidadeX < x + 4) unidadeX = x + 4;
+
+      tft.setCursor(unidadeX, y + h - 14);
       tft.print(unidade);
     }
 
@@ -1435,12 +1370,47 @@ void desenharCardDash(int x, int y, int w, int h, const char* titulo, const char
   }
 
   if (mudouValor) {
-    // Apaga somente a área do valor, não o card inteiro
-    tft.fillRect(x + 5, y + 25, w - 10, 30, ST77XX_BLACK);
+    // Apaga uma area maior do valor para cobrir fontes 1, 2 e 3
+    tft.fillRect(x + 3, y + 23, w - 6, h - 42, ST77XX_BLACK);
 
-    tft.setTextSize(3);
+    int16_t x1, y1;
+    uint16_t tw, th;
+
+    int textSizeValor = 3;
+    int larguraDisponivel = w - 10;
+
+    // Escolhe automaticamente o maior tamanho que cabe no card
+    for (int size = 3; size >= 1; size--) {
+      tft.setTextSize(size);
+      tft.getTextBounds(valor, 0, 0, &x1, &y1, &tw, &th);
+
+      if (tw <= larguraDisponivel) {
+        textSizeValor = size;
+        break;
+      }
+
+      if (size == 1) {
+        textSizeValor = 1;
+      }
+    }
+
+    tft.setTextSize(textSizeValor);
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(x + 8, y + 27);
+    tft.getTextBounds(valor, 0, 0, &x1, &y1, &tw, &th);
+
+    // Centraliza horizontalmente
+    int valorX = x + ((w - tw) / 2);
+    if (valorX < x + 4) valorX = x + 4;
+
+    // Centraliza verticalmente entre o titulo e a unidade
+    int areaValorY = y + 23;
+    int areaValorH = h - 42;
+    int valorY = areaValorY + ((areaValorH - th) / 2);
+
+    // Compensacao do getTextBounds para fonte padrao
+    valorY -= y1;
+
+    tft.setCursor(valorX, valorY);
     tft.print(valor);
 
     strncpy(cache.valor, valor, sizeof(cache.valor) - 1);
@@ -1454,7 +1424,7 @@ void dashboardRelogioBME() {
   float hum = bme.readHumidity();
   float pres = bme.readPressure() / 100.0F;
 
-  desenharDashboardHeader("RELÓGIO");
+  desenharDashboardHeader("RELOGIO");
 
   tft.setTextSize(5);
   tft.setTextColor(0x07FF, ST77XX_BLACK);
@@ -1805,6 +1775,175 @@ void ajustarHora() {
   tft.print("Gire para ajustar - Clique para proximo");
 }
 
+
+void telaSensorValorCentral(const char* titulo, const char* subtitulo, const char* valor, const char* unidade, uint16_t cor) {
+  static bool iniciado = false;
+  static int ultimaTela = -1;
+  static char ultimoValor[32] = "";
+  static char ultimoUnidade[16] = "";
+  static char ultimoTitulo[32] = "";
+  static uint16_t ultimaCor = 0;
+
+  bool mudouTela =
+    ultimaTela != telaAtiva ||
+    strcmp(ultimoTitulo, titulo) != 0 ||
+    ultimaCor != cor ||
+    forcarRedesenhoTela;
+
+  if (!iniciado || mudouTela) {
+    tft.fillScreen(ST77XX_BLACK);
+    tft.setTextWrap(false);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    // Titulo
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.getTextBounds(titulo, 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor((280 - w) / 2, 12);
+    tft.print(titulo);
+
+    tft.drawFastHLine(30, 36, 220, ST77XX_GREY);
+
+    // Subtitulo
+    if (strlen(subtitulo) > 0) {
+      tft.setTextSize(1);
+      tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+      tft.getTextBounds(subtitulo, 0, 0, &x1, &y1, &w, &h);
+      tft.setCursor((280 - w) / 2, 48);
+      tft.print(subtitulo);
+    }
+
+    // Card/borda central
+    tft.drawRoundRect(18, 70, 244, 130, 10, cor);
+    tft.drawRoundRect(21, 73, 238, 124, 8, ST77XX_GREY);
+
+    // Pequeno detalhe superior da borda
+    tft.fillRoundRect(92, 66, 96, 10, 4, ST77XX_BLACK);
+    tft.drawRoundRect(92, 66, 96, 10, 4, cor);
+
+    // Rodape
+    desenharRodapeSensor();
+
+    iniciado = true;
+    ultimaTela = telaAtiva;
+    ultimaCor = cor;
+
+    strncpy(ultimoTitulo, titulo, sizeof(ultimoTitulo) - 1);
+    ultimoTitulo[sizeof(ultimoTitulo) - 1] = '\0';
+
+    ultimoValor[0] = '\0';
+    ultimoUnidade[0] = '\0';
+  }
+
+  if (strcmp(ultimoValor, valor) != 0 || strcmp(ultimoUnidade, unidade) != 0 || forcarRedesenhoTela) {
+    // Limpa somente dentro do card
+    tft.fillRect(28, 82, 224, 104, ST77XX_BLACK);
+
+    int16_t x1, y1;
+    uint16_t valorW, valorH;
+    uint16_t unidadeW = 0;
+    uint16_t unidadeH = 0;
+
+    int textSizeValor = 5;
+
+    // Acha maior fonte que cabe no card
+    for (int size = 5; size >= 1; size--) {
+      tft.setTextSize(size);
+      tft.getTextBounds(valor, 0, 0, &x1, &y1, &valorW, &valorH);
+
+      if (valorW <= 190) {
+        textSizeValor = size;
+        break;
+      }
+    }
+
+    int textSizeUnidade = 2;
+
+    if (strlen(unidade) > 0) {
+      tft.setTextSize(textSizeUnidade);
+      tft.getTextBounds(unidade, 0, 0, &x1, &y1, &unidadeW, &unidadeH);
+    }
+
+    int gap = strlen(unidade) > 0 ? 8 : 0;
+    int totalW = valorW + gap + unidadeW;
+
+    // Se valor + unidade não couber, reduz unidade
+    if (totalW > 220 && strlen(unidade) > 0) {
+      textSizeUnidade = 1;
+      tft.setTextSize(textSizeUnidade);
+      tft.getTextBounds(unidade, 0, 0, &x1, &y1, &unidadeW, &unidadeH);
+      totalW = valorW + gap + unidadeW;
+    }
+
+    // Se ainda não couber, reduz valor
+    while (totalW > 220 && textSizeValor > 1) {
+      textSizeValor--;
+
+      tft.setTextSize(textSizeValor);
+      tft.getTextBounds(valor, 0, 0, &x1, &y1, &valorW, &valorH);
+
+      if (strlen(unidade) > 0) {
+        tft.setTextSize(textSizeUnidade);
+        tft.getTextBounds(unidade, 0, 0, &x1, &y1, &unidadeW, &unidadeH);
+      }
+
+      totalW = valorW + gap + unidadeW;
+    }
+
+    int startX = 18 + ((244 - totalW) / 2);
+
+    // Centraliza verticalmente dentro do card
+    int cardY = 70;
+    int cardH = 130;
+    int baseY = cardY + ((cardH - valorH) / 2) - y1;
+
+    // Ajuste fino para unidade ficar alinhada visualmente
+    int unidadeY = baseY + 8;
+
+    if (textSizeValor <= 2) {
+      unidadeY = baseY + 2;
+    }
+
+    tft.setTextSize(textSizeValor);
+    tft.setTextColor(cor, ST77XX_BLACK);
+    tft.setCursor(startX, baseY);
+    tft.print(valor);
+
+    if (strlen(unidade) > 0) {
+      tft.setTextSize(textSizeUnidade);
+      tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+
+      int unidadeX = startX + valorW + gap;
+      tft.setCursor(unidadeX, unidadeY);
+      tft.print(unidade);
+    }
+
+    strncpy(ultimoValor, valor, sizeof(ultimoValor) - 1);
+    ultimoValor[sizeof(ultimoValor) - 1] = '\0';
+
+    strncpy(ultimoUnidade, unidade, sizeof(ultimoUnidade) - 1);
+    ultimoUnidade[sizeof(ultimoUnidade) - 1] = '\0';
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    iniciado = false;
+    ultimaTela = -1;
+    ultimoValor[0] = '\0';
+    ultimoUnidade[0] = '\0';
+    ultimoTitulo[0] = '\0';
+    ultimaCor = 0;
+
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
+  }
+}
+
 // ======================================================
 // TELAS DE DIAGNÓSTICO
 // ======================================================
@@ -1910,48 +2049,123 @@ void telaStatusEletrico() {
 }
 
 void telaStatusSD() {
+  static bool iniciado = false;
+  static unsigned long ultimaLeitura = 0;
+
+  if (!iniciado || forcarRedesenhoTela) {
+    tft.fillScreen(ST77XX_BLACK);
+    iniciado = true;
+    ultimaLeitura = 0;
+  }
+
+  if (millis() - ultimaLeitura < 1000 && !forcarRedesenhoTela) {
+    if (cliqueDetectado) {
+      cliqueDetectado = false;
+      iniciado = false;
+      estadoUI = MENU_UI;
+      tft.fillScreen(ST77XX_BLACK);
+      desenharMenu();
+      beep(freqClique);
+    }
+    return;
+  }
+
+  ultimaLeitura = millis();
+
+  tft.fillScreen(ST77XX_BLACK);
+
   tft.setTextSize(2);
   tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.setCursor(85, 20);
-  tft.print("CARTAO SD");
-  tft.drawFastHLine(40, 42, 200, ST77XX_GREY);
 
-  int xPos = 40;
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds("SD CARD", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, 12);
+  tft.print("SD CARD");
+  tft.drawFastHLine(30, 36, 220, ST77XX_GREY);
+
   bool sdOk = SD.begin(SD_CS);
 
+  tft.setTextSize(1);
+
   if (!sdOk) {
-    tft.drawBitmap(xPos, 80, icone_erro, 16, 16, ST77XX_RED);
     tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
-    tft.setCursor(xPos + 25, 80); tft.print("SD: ERRO/OFF");
-  } else {
-    tft.drawBitmap(xPos, 70, icone_ok, 16, 16, ST77XX_GREEN);
-    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    tft.setCursor(xPos + 25, 70); tft.print("SD: PRONTO");
+    tft.setCursor(35, 95);
+    tft.print("SD nao encontrado");
+    desenharRodapeSensor();
+    return;
+  }
 
-    uint64_t total = SD.totalBytes() / (1024 * 1024);
-    uint64_t usado = SD.usedBytes() / (1024 * 1024);
+  uint64_t total = SD.totalBytes();
+  uint64_t usado = SD.usedBytes();
+  uint64_t livre = total > usado ? total - usado : 0;
+  uint64_t tamanhoLogs = calcularTamanhoPasta(LOGS_DIR);
+  int qtdLogs = contarArquivosLogs();
 
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(xPos, 105);
-    tft.printf("%lluMB / %lluMB", usado, total);
+  float usoPercent = 0.0f;
+  if (total > 0) {
+    usoPercent = ((float)usado * 100.0f) / (float)total;
+  }
 
-    int barraW = 200;
-    int barraH = 15;
-    int barraX = xPos;
-    int barraY = 130;
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.setCursor(20, 55);
+  tft.print("Status: OK");
 
-    tft.drawRect(barraX, barraY, barraW, barraH, 0x03EF);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
 
-    int preenchimento = (usado * (barraW - 4)) / total;
-    if (preenchimento > barraW - 4) preenchimento = barraW - 4;
+  tft.setCursor(20, 80);
+  tft.print("Total: ");
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.print(formatarBytesSD(total));
 
-    tft.fillRect(barraX + 2, barraY + 2, preenchimento, barraH - 4, 0x07FF);
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(20, 100);
+  tft.print("Usado: ");
+  tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+  tft.print(formatarBytesSD(usado));
 
-    tft.setCursor(xPos, 165);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.print("LOG: ");
-    tft.setTextColor(0x07FF, ST77XX_BLACK); tft.print("GRAVANDO");
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(20, 120);
+  tft.print("Livre: ");
+  tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
+  tft.print(formatarBytesSD(livre));
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(20, 140);
+  tft.print("Uso: ");
+  tft.setTextColor(usoPercent >= 90.0f ? ST77XX_RED : ST77XX_YELLOW, ST77XX_BLACK);
+  tft.print(usoPercent, 1);
+  tft.print("%");
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(20, 165);
+  tft.print("Logs: ");
+  tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
+  tft.print(formatarBytesSD(tamanhoLogs));
+
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(20, 185);
+  tft.print("Arquivos log: ");
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+  tft.print(qtdLogs);
+
+  if (logsSdSessaoAberta) {
+    tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
+    tft.setCursor(20, 210);
+    tft.print("REC: ");
+    tft.print(logsSdLinhasSessao);
+    tft.print(" linhas");
+  }
+
+  desenharRodapeSensor();
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+    iniciado = false;
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
   }
 }
 
@@ -1967,7 +2181,15 @@ bool telaEhSensorALDL(int tela) {
     tela == TELA_RPM ||
     tela == TELA_TEMPO_INJECAO ||
     tela == TELA_CO2 ||
+    tela == TELA_VELOCIDADE ||
+    tela == TELA_IAC ||
+    tela == TELA_SPK ||
+    tela == TELA_AFR ||
+    tela == TELA_FAN ||
+    tela == TELA_VMOTOR ||
+    tela == TELA_TEMPO_MOTOR ||
     tela == TELA_CODIGOS_ECU ||
+    tela == TELA_MASCOTE ||
     tela == TELA_LIMPAR_ECU
   );
 }
@@ -2254,44 +2476,53 @@ void telaTesteDisplay() {
 }
 
 void telaSensorCO2() {
-  static bool iniciado = false;
-  static float ultimoValor = -9999;
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.2f", voltCO2);
+  telaSensorValorCentral("CO2 POT", "Potenciometro CO2", valor, "V", ST77XX_MAGENTA);
+}
 
-  if (!iniciado || forcarRedesenhoTela) {
-    desenharTituloTelaSensor("CO2 POT");
-    desenharRodapeSensor();
-    iniciado = true;
-    ultimoValor = -9999;
-  }
+void telaSensorVelocidade() {
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%d", velocidade);
+  telaSensorValorCentral("VELOCIDADE", "Velocidade pela ECU", valor, "km/h", ST77XX_CYAN);
+}
 
-  if (ultimoValor != voltCO2) {
-    tft.fillRect(0, 60, 280, 140, ST77XX_BLACK);
+void telaSensorIAC() {
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%d", valorIAC);
+  telaSensorValorCentral("IAC", "Atuador marcha lenta", valor, "steps", ST77XX_GREEN);
+}
 
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(70, 65);
-    tft.print("AJUSTE CO2");
+void telaSensorSPK() {
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", valorAvancoIgnicao);
+  telaSensorValorCentral("SPK", "Avanco ignicao", valor, "graus", ST77XX_YELLOW);
+}
 
-    tft.setTextSize(5);
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(45, 105);
-    tft.printf("%.2f", voltCO2);
+void telaSensorAFR() {
+  char valor[16];
+  snprintf(valor, sizeof(valor), "%.1f", valorAFR);
+  telaSensorValorCentral("AFR", "AFR desejado pela ECU", valor, ":1", ST77XX_CYAN);
+}
 
-    tft.setTextSize(2);
-    tft.setCursor(180, 165);
-    tft.print("V");
+void telaSensorFan() {
+  char valor[8];
+  bool fanEstimado = atualizarFanEstimado();
 
-    ultimoValor = voltCO2;
-  }
+  snprintf(valor, sizeof(valor), "%s", fanEstimado ? "ON" : "OFF");
+  telaSensorValorCentral("FAN", "Ventoinha estimada", valor, "", fanEstimado ? ST77XX_GREEN : ST77XX_RED);
+}
 
-  if (cliqueDetectado) {
-    cliqueDetectado = false;
-    iniciado = false;
-    ultimoValor = -9999;
-    estadoUI = MENU_UI;
-    tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-  }
+void telaSensorVMotor() {
+  char valor[8];
+  snprintf(valor, sizeof(valor), "%s", tempoMotorLigado > 0 ? "ON" : "OFF");
+  telaSensorValorCentral("VMOTOR", "Motor ligado", valor, "", tempoMotorLigado > 0 ? ST77XX_GREEN : ST77XX_RED);
+}
+
+void telaSensorTempoMotor() {
+  char valor[16];
+  formatarTempoMotor(valor, sizeof(valor), tempoMotorLigado);
+  telaSensorValorCentral("TEMPO MOTOR", "Tempo ligado", valor, "", ST77XX_CYAN);
 }
 
 void telaCodigosECU() {
@@ -2924,6 +3155,24 @@ void salvarConfiguracoes() {
   doc["dashboardUiUpdateMs"] = dashboardUiUpdateMs;
   doc["aldlUiUpdateMs"] = aldlUiUpdateMs;
 
+  doc["logsSdAtivo"] = logsSdAtivo;
+  doc["logsSdIntervaloMs"] = logsSdIntervaloMs;
+
+  doc["logRPM"] = logRPM;
+  doc["logTPS"] = logTPS;
+  doc["logMAP"] = logMAP;
+  doc["logCTS"] = logCTS;
+  doc["logVBAT"] = logVBAT;
+  doc["logVelocidade"] = logVelocidade;
+  doc["logIAC"] = logIAC;
+  doc["logInjecao"] = logInjecao;
+  doc["logCO2"] = logCO2;
+  doc["logSPK"] = logSPK;
+  doc["logAFR"] = logAFR;
+  doc["logFan"] = logFan;
+  doc["logVMotor"] = logVMotor;
+  doc["logTempoMotor"] = logTempoMotor;
+
   serializeJsonPretty(doc, file);
   file.flush();
   file.close();
@@ -2961,6 +3210,24 @@ void carregarConfiguracoes() {
     intervaloUpdateMs = doc["intervaloUpdateMs"] | 250;
     dashboardUiUpdateMs = doc["dashboardUiUpdateMs"] | 300;
     aldlUiUpdateMs = doc["aldlUiUpdateMs"] | 180;
+    
+    logsSdAtivo = doc["logsSdAtivo"] | false;
+    logsSdIntervaloMs = doc["logsSdIntervaloMs"] | 1000;
+
+    logRPM = doc["logRPM"] | true;
+    logTPS = doc["logTPS"] | true;
+    logMAP = doc["logMAP"] | true;
+    logCTS = doc["logCTS"] | true;
+    logVBAT = doc["logVBAT"] | true;
+    logVelocidade = doc["logVelocidade"] | true;
+    logIAC = doc["logIAC"] | true;
+    logInjecao = doc["logInjecao"] | true;
+    logCO2 = doc["logCO2"] | true;
+    logSPK = doc["logSPK"] | true;
+    logAFR = doc["logAFR"] | true;
+    logFan = doc["logFan"] | true;
+    logVMotor = doc["logVMotor"] | true;
+    logTempoMotor = doc["logTempoMotor"] | true;
   }
   if (dashInicialDefault < -1) dashInicialDefault = -1;
   if (dashInicialDefault >= totalDashboards) dashInicialDefault = -1;
@@ -2975,6 +3242,624 @@ void carregarConfiguracoes() {
   if (aldlUiUpdateMs > 2000) aldlUiUpdateMs = 2000;
 
   file.close();
+}
+
+void desenharLinhaLogOpcao(int y, const char* nome, bool valor, bool selecionado) {
+  if (selecionado) {
+    tft.drawRoundRect(8, y - 3, 264, 22, 5, ST77XX_CYAN);
+  }
+
+  tft.setTextSize(1);
+  tft.setTextColor(selecionado ? ST77XX_CYAN : ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(18, y + 3);
+  tft.print(nome);
+
+  tft.setTextColor(valor ? ST77XX_GREEN : ST77XX_RED, ST77XX_BLACK);
+  tft.setCursor(220, y + 3);
+  tft.print(valor ? "ON" : "OFF");
+}
+
+void desenharLinhaLogValor(int y, const char* nome, unsigned long valor, const char* unidade, bool selecionado) {
+  if (selecionado) {
+    tft.drawRoundRect(8, y - 3, 264, 22, 5, ST77XX_CYAN);
+  }
+
+  tft.setTextSize(1);
+  tft.setTextColor(selecionado ? ST77XX_CYAN : ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(18, y + 3);
+  tft.print(nome);
+
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+  tft.setCursor(175, y + 3);
+  tft.print(valor);
+  tft.print(" ");
+  tft.print(unidade);
+}
+
+void desenharLinhaLogTexto(int y, const char* nome, const char* valor, bool selecionado) {
+  if (selecionado) {
+    tft.drawRoundRect(8, y - 3, 264, 22, 5, ST77XX_CYAN);
+  }
+
+  tft.setTextSize(1);
+  tft.setTextColor(selecionado ? ST77XX_CYAN : ST77XX_WHITE, ST77XX_BLACK);
+  tft.setCursor(18, y + 3);
+  tft.print(nome);
+
+  tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+  tft.setCursor(175, y + 3);
+  tft.print(valor);
+}
+
+void telaLogsSD() {
+  static bool iniciado = false;
+  static int item = 0;
+
+  const int totalItens = 18;
+  const int itemAltura = 22;
+  const int yInicio = 48;
+  const int areaAltura = 170;
+  const int itensVisiveis = areaAltura / itemAltura;
+
+  if (!iniciado || forcarRedesenhoTela) {
+    tft.fillScreen(ST77XX_BLACK);
+    iniciado = true;
+  }
+
+  if (movimentoEncoder != 0) {
+    item += movimentoEncoder;
+
+    if (item < 0) item = totalItens - 1;
+    if (item >= totalItens) item = 0;
+
+    movimentoEncoder = 0;
+    beep(freqEncoder);
+    tft.fillRect(0, 40, 280, 190, ST77XX_BLACK);
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    if (item == 0) {
+      logsSdAtivo = !logsSdAtivo;
+      if (!logsSdAtivo) {
+        fecharLogSD();
+      }
+    }
+    else if (item == 1) {
+      if (logsSdIntervaloMs == 250) logsSdIntervaloMs = 500;
+      else if (logsSdIntervaloMs == 500) logsSdIntervaloMs = 1000;
+      else if (logsSdIntervaloMs == 1000) logsSdIntervaloMs = 2000;
+      else if (logsSdIntervaloMs == 2000) logsSdIntervaloMs = 5000;
+      else logsSdIntervaloMs = 250;
+    }
+    else if (item == 2) logRPM = !logRPM;
+    else if (item == 3) logTPS = !logTPS;
+    else if (item == 4) logMAP = !logMAP;
+    else if (item == 5) logCTS = !logCTS;
+    else if (item == 6) logVBAT = !logVBAT;
+    else if (item == 7) logVelocidade = !logVelocidade;
+    else if (item == 8) logIAC = !logIAC;
+    else if (item == 9) logInjecao = !logInjecao;
+    else if (item == 10) logCO2 = !logCO2;
+    else if (item == 11) logSPK = !logSPK;
+    else if (item == 12) logAFR = !logAFR;
+    else if (item == 13) logFan = !logFan;
+    else if (item == 14) logVMotor = !logVMotor;
+    else if (item == 15) logTempoMotor = !logTempoMotor;
+    else if (item == 16) {
+      apagarTodosLogs();
+    }
+    else if (item == 17) {
+      salvarConfiguracoes();
+      fecharLogSD();
+
+      iniciado = false;
+      estadoUI = MENU_UI;
+      tft.fillScreen(ST77XX_BLACK);
+      desenharMenu();
+      beep(freqClique);
+      return;
+    }
+
+    salvarConfiguracoes();
+    fecharLogSD();
+
+    beep(freqClique);
+    tft.fillRect(0, 40, 280, 190, ST77XX_BLACK);
+  }
+
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds("LOGS SD", 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, 12);
+  tft.print("LOGS SD");
+  tft.drawFastHLine(30, 36, 220, ST77XX_GREY);
+
+  int scroll = 0;
+  if (item >= itensVisiveis) {
+    scroll = item - itensVisiveis + 1;
+  }
+
+  for (int i = 0; i < itensVisiveis; i++) {
+    int idx = scroll + i;
+    if (idx >= totalItens) break;
+
+    int y = yInicio + (i * itemAltura);
+    bool selecionado = idx == item;
+
+    if (idx == 0) desenharLinhaLogOpcao(y, "Gravar logs", logsSdAtivo, selecionado);
+    else if (idx == 1) desenharLinhaLogValor(y, "Intervalo", logsSdIntervaloMs, "ms", selecionado);
+    else if (idx == 2) desenharLinhaLogOpcao(y, "RPM", logRPM, selecionado);
+    else if (idx == 3) desenharLinhaLogOpcao(y, "TPS", logTPS, selecionado);
+    else if (idx == 4) desenharLinhaLogOpcao(y, "MAP", logMAP, selecionado);
+    else if (idx == 5) desenharLinhaLogOpcao(y, "CTS Temp Motor", logCTS, selecionado);
+    else if (idx == 6) desenharLinhaLogOpcao(y, "VBAT", logVBAT, selecionado);
+    else if (idx == 7) desenharLinhaLogOpcao(y, "Velocidade", logVelocidade, selecionado);
+    else if (idx == 8) desenharLinhaLogOpcao(y, "IAC Steps", logIAC, selecionado);
+    else if (idx == 9) desenharLinhaLogOpcao(y, "Tempo Injecao", logInjecao, selecionado);
+    else if (idx == 10) desenharLinhaLogOpcao(y, "CO2 POT", logCO2, selecionado);
+    else if (idx == 11) desenharLinhaLogOpcao(y, "SPK Avanco", logSPK, selecionado);
+    else if (idx == 12) desenharLinhaLogOpcao(y, "AFR Desejado", logAFR, selecionado);
+    else if (idx == 13) desenharLinhaLogOpcao(y, "FAN", logFan, selecionado);
+    else if (idx == 14) desenharLinhaLogOpcao(y, "VMOTOR", logVMotor, selecionado);
+    else if (idx == 15) desenharLinhaLogOpcao(y, "Tempo Motor", logTempoMotor, selecionado);
+    else if (idx == 16) desenharLinhaLogTexto(y, "Apagar logs", "EXEC", selecionado);
+    else if (idx == 17) desenharLinhaLogTexto(y, "Voltar", "", selecionado);
+  }
+
+  tft.fillRect(0, 226, 280, 14, ST77XX_BLACK);
+  tft.setTextSize(1);
+  tft.setTextColor(logsSdAtivo ? ST77XX_GREEN : ST77XX_GREY, ST77XX_BLACK);
+  tft.setCursor(10, 228);
+  tft.print(logsSdAtivo ? "LOG ON" : "LOG OFF");
+
+  tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+  tft.setCursor(90, 228);
+  tft.print("Arquivos: ");
+  tft.print(contarArquivosLogs());
+
+  tft.setCursor(190, 228);
+  tft.print(formatarBytesSD(calcularTamanhoPasta(LOGS_DIR)));
+}
+
+String formatarBytesSD(uint64_t bytes) {
+  char buffer[24];
+
+  if (bytes >= 1024ULL * 1024ULL * 1024ULL) {
+    snprintf(buffer, sizeof(buffer), "%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+  } else if (bytes >= 1024ULL * 1024ULL) {
+    snprintf(buffer, sizeof(buffer), "%.1f MB", (double)bytes / (1024.0 * 1024.0));
+  } else if (bytes >= 1024ULL) {
+    snprintf(buffer, sizeof(buffer), "%.1f KB", (double)bytes / 1024.0);
+  } else {
+    snprintf(buffer, sizeof(buffer), "%llu B", (unsigned long long)bytes);
+  }
+
+  return String(buffer);
+}
+
+bool garantirPastaLogs() {
+  if (!SD.begin(SD_CS)) {
+    logsSdStatusMsg = "SD nao iniciado";
+    return false;
+  }
+
+  if (!SD.exists(LOGS_DIR)) {
+    if (!SD.mkdir(LOGS_DIR)) {
+      logsSdStatusMsg = "Erro criando /logs";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+void iniciarSessaoLogSD() {
+  if (logsSdSessaoAberta) return;
+
+  if (!garantirPastaLogs()) {
+    return;
+  }
+
+  limparLogsSeNecessario();
+
+  DateTime now = rtc.now();
+
+  char nomeArquivo[48];
+  snprintf(nomeArquivo, sizeof(nomeArquivo),
+           "/logs/aldl_%04d%02d%02d_%02d%02d%02d.csv",
+           now.year(), now.month(), now.day(),
+           now.hour(), now.minute(), now.second());
+
+  logsSdArquivoAtual = String(nomeArquivo);
+
+  logsSdFile = SD.open(logsSdArquivoAtual, FILE_WRITE);
+
+  if (!logsSdFile) {
+    logsSdStatusMsg = "Erro abrindo log";
+    logsSdSessaoAberta = false;
+    return;
+  }
+
+  escreverCabecalhoLogSD(logsSdFile);
+  logsSdFile.flush();
+
+  logsSdSessaoAberta = true;
+  logsSdUltimaGravacao = 0;
+  logsSdBytesGravadosSessao = 0;
+  logsSdLinhasSessao = 0;
+  logsSdStatusMsg = "Gravando";
+}
+
+void fecharLogSD() {
+  if (logsSdFile) {
+    logsSdFile.flush();
+    logsSdFile.close();
+  }
+
+  logsSdSessaoAberta = false;
+
+  if (!logsSdAtivo) {
+    logsSdStatusMsg = "Logs desligados";
+  }
+}
+
+void escreverCabecalhoLogSD(File &file) {
+  file.print("millis,data,hora");
+
+  if (logRPM) file.print(",rpm");
+  if (logTPS) file.print(",tps_percent");
+  if (logMAP) file.print(",map_v");
+  if (logCTS) file.print(",cts_c");
+  if (logVBAT) file.print(",vbat_v");
+  if (logVelocidade) file.print(",velocidade_kmh");
+  if (logIAC) file.print(",iac_steps");
+  if (logInjecao) file.print(",injecao_ms");
+  if (logCO2) file.print(",co2_v");
+  if (logSPK) file.print(",spk_graus");
+  if (logAFR) file.print(",afr_desejado");
+  if (logFan) file.print(",fan");
+  if (logVMotor) file.print(",vmotor");
+  if (logTempoMotor) file.print(",tempo_motor_s");
+
+  file.println();
+}
+
+void escreverLinhaLogSD(File &file) {
+  DateTime now = rtc.now();
+
+  char data[16];
+  char hora[16];
+
+  snprintf(data, sizeof(data), "%02d/%02d/%04d", now.day(), now.month(), now.year());
+  snprintf(hora, sizeof(hora), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+
+  bool fanEstimado = atualizarFanEstimado();
+
+  file.print(millis());
+  file.print(",");
+  file.print(data);
+  file.print(",");
+  file.print(hora);
+
+  if (logRPM) {
+    file.print(",");
+    file.print(valorRPM);
+  }
+
+  if (logTPS) {
+    file.print(",");
+    file.print(valorTPS, 1);
+  }
+
+  if (logMAP) {
+    file.print(",");
+    file.print(valorMAP, 2);
+  }
+
+  if (logCTS) {
+    file.print(",");
+    file.print(tempMotor, 1);
+  }
+
+  if (logVBAT) {
+    file.print(",");
+    file.print(voltagem, 1);
+  }
+
+  if (logVelocidade) {
+    file.print(",");
+    file.print(velocidade);
+  }
+
+  if (logIAC) {
+    file.print(",");
+    file.print(valorIAC);
+  }
+
+  if (logInjecao) {
+    file.print(",");
+    file.print(tempoInjecao, 2);
+  }
+
+  if (logCO2) {
+    file.print(",");
+    file.print(voltCO2, 2);
+  }
+
+  if (logSPK) {
+    file.print(",");
+    file.print(valorAvancoIgnicao, 1);
+  }
+
+  if (logAFR) {
+    file.print(",");
+    file.print(valorAFR, 1);
+  }
+
+  if (logFan) {
+    file.print(",");
+    file.print(fanEstimado ? "ON" : "OFF");
+  }
+
+  if (logVMotor) {
+    file.print(",");
+    file.print(tempoMotorLigado > 0 ? "ON" : "OFF");
+  }
+
+  if (logTempoMotor) {
+    file.print(",");
+    file.print((unsigned long)tempoMotorLigado);
+  }
+
+  file.println();
+}
+
+void loopLogsSD() {
+  if (!logsSdAtivo) return;
+
+  if (!aldlPrimeiroFrameOk) return;
+  if (!aldlTemFrameValido) return;
+  if (pacotesRecebidos <= 0) return;
+
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+  if (!ecuConectada) return;
+
+  if (!logsSdSessaoAberta) {
+    iniciarSessaoLogSD();
+  }
+
+  if (!logsSdSessaoAberta || !logsSdFile) {
+    return;
+  }
+
+  if (millis() - logsSdUltimaGravacao < logsSdIntervaloMs) {
+    return;
+  }
+
+  logsSdUltimaGravacao = millis();
+
+  uint64_t posAntes = logsSdFile.position();
+
+  escreverLinhaLogSD(logsSdFile);
+
+  logsSdLinhasSessao++;
+
+  uint64_t posDepois = logsSdFile.position();
+  if (posDepois > posAntes) {
+    logsSdBytesGravadosSessao += (posDepois - posAntes);
+  }
+
+  if (logsSdLinhasSessao % 10 == 0) {
+    logsSdFile.flush();
+  }
+
+  if (millis() - logsSdUltimaLimpeza > 30000) {
+    logsSdUltimaLimpeza = millis();
+    limparLogsSeNecessario();
+  }
+}
+
+uint64_t calcularTamanhoPasta(const char* caminho) {
+  uint64_t total = 0;
+
+  if (!SD.exists(caminho)) {
+    return 0;
+  }
+
+  File dir = SD.open(caminho);
+  if (!dir || !dir.isDirectory()) {
+    return 0;
+  }
+
+  File file = dir.openNextFile();
+
+  while (file) {
+    if (!file.isDirectory()) {
+      total += file.size();
+    }
+
+    file.close();
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+
+  return total;
+}
+
+int contarArquivosLogs() {
+  int total = 0;
+
+  if (!SD.exists(LOGS_DIR)) {
+    return 0;
+  }
+
+  File dir = SD.open(LOGS_DIR);
+  if (!dir || !dir.isDirectory()) {
+    return 0;
+  }
+
+  File file = dir.openNextFile();
+
+  while (file) {
+    if (!file.isDirectory()) {
+      String nome = String(file.name());
+      nome.toLowerCase();
+
+      if (nome.endsWith(".csv")) {
+        total++;
+      }
+    }
+
+    file.close();
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+
+  return total;
+}
+
+bool apagarLogMaisAntigo() {
+  if (!SD.exists(LOGS_DIR)) {
+    return false;
+  }
+
+  File dir = SD.open(LOGS_DIR);
+  if (!dir || !dir.isDirectory()) {
+    return false;
+  }
+
+  String maisAntigo = "";
+  File file = dir.openNextFile();
+
+  while (file) {
+    if (!file.isDirectory()) {
+      String nome = String(file.name());
+      String nomeLower = nome;
+      nomeLower.toLowerCase();
+
+      if (nomeLower.endsWith(".csv")) {
+        String caminho = nome;
+
+        if (!caminho.startsWith("/")) {
+          caminho = String(LOGS_DIR) + "/" + caminho;
+        }
+
+        // Como o nome tem aldl_YYYYMMDD_HHMMSS.csv, ordem alfabetica = ordem cronologica
+        if (maisAntigo.length() == 0 || caminho < maisAntigo) {
+          maisAntigo = caminho;
+        }
+      }
+    }
+
+    file.close();
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+
+  if (maisAntigo.length() == 0) {
+    return false;
+  }
+
+  if (maisAntigo == logsSdArquivoAtual) {
+    return false;
+  }
+
+  return SD.remove(maisAntigo);
+}
+
+void limparLogsSeNecessario() {
+  if (!SD.begin(SD_CS)) return;
+
+  uint64_t total = SD.totalBytes();
+  uint64_t usado = SD.usedBytes();
+
+  if (total == 0) return;
+
+  float usoPercent = ((float)usado * 100.0f) / (float)total;
+
+  if (usoPercent < 90.0f) {
+    return;
+  }
+
+  logsSdStatusMsg = "Limpando logs";
+
+  // Apaga logs antigos ate baixar para 80%
+  while (usoPercent > 80.0f) {
+    bool apagou = apagarLogMaisAntigo();
+
+    if (!apagou) {
+      break;
+    }
+
+    total = SD.totalBytes();
+    usado = SD.usedBytes();
+
+    if (total == 0) break;
+
+    usoPercent = ((float)usado * 100.0f) / (float)total;
+    delay(10);
+  }
+
+  logsSdStatusMsg = "Gravando";
+}
+
+void apagarTodosLogs() {
+  fecharLogSD();
+
+  if (!SD.exists(LOGS_DIR)) {
+    logsSdStatusMsg = "Sem logs";
+    return;
+  }
+
+  File dir = SD.open(LOGS_DIR);
+  if (!dir || !dir.isDirectory()) {
+    logsSdStatusMsg = "Erro /logs";
+    return;
+  }
+
+  std::vector<String> arquivos;
+
+  File file = dir.openNextFile();
+
+  while (file) {
+    if (!file.isDirectory()) {
+      String nome = String(file.name());
+      String nomeLower = nome;
+      nomeLower.toLowerCase();
+
+      if (nomeLower.endsWith(".csv")) {
+        String caminho = nome;
+
+        if (!caminho.startsWith("/")) {
+          caminho = String(LOGS_DIR) + "/" + caminho;
+        }
+
+        arquivos.push_back(caminho);
+      }
+    }
+
+    file.close();
+    file = dir.openNextFile();
+  }
+
+  dir.close();
+
+  for (int i = 0; i < (int)arquivos.size(); i++) {
+    SD.remove(arquivos[i]);
+  }
+
+  logsSdArquivoAtual = "";
+  logsSdBytesGravadosSessao = 0;
+  logsSdLinhasSessao = 0;
+  logsSdStatusMsg = "Logs apagados";
 }
 
 // ======================================================
@@ -3288,6 +4173,18 @@ void limparEstadoALDL() {
   ultimaMensagemALDL = 0;
   pacotesRecebidos = 0;
   ecuConectada = false;
+
+  voltCO2 = 0;
+  valorAvancoIgnicao = 0;
+  valorAFR = 0;
+  tempAdmissao = 0;
+  valorIAC = 0;
+  fanEstimadoLigada = false;
+
+  ecuIdRaw = 0;
+  ecuModuloCodigo = "";
+  ecuModuloNome = "";
+  ecuModuloDescricao = "";
 }
 
 void iniciarALDL() {
@@ -3885,11 +4782,25 @@ bool ehArquivoGifSeguro(String caminho) {
   if (caminho.indexOf("..") >= 0) return false;
   if (caminho.indexOf("//") >= 0) return false;
 
-  // Garante que é arquivo direto na raiz do SD, tipo /abertura.gif
+  // Permite GIF direto na raiz: /abertura.gif
   String semBarraInicial = caminho.substring(1);
-  if (semBarraInicial.indexOf("/") >= 0) return false;
 
-  return true;
+  if (semBarraInicial.indexOf("/") < 0) {
+    return true;
+  }
+
+  // Permite GIFs somente dentro de /mascote/
+  if (lower.startsWith("/mascote/")) {
+    String resto = caminho.substring(String("/mascote/").length());
+
+    // Nao permite subpastas dentro de /mascote
+    if (resto.length() == 0) return false;
+    if (resto.indexOf("/") >= 0) return false;
+
+    return true;
+  }
+
+  return false;
 }
 
 bool obterDimensaoGif(String caminho, uint16_t &largura, uint16_t &altura) {
@@ -3989,6 +4900,18 @@ String montarHtmlListaGifs() {
 
       html += "</div>";
 
+      // RENOMEAR GIF
+      html += "<form method='POST' action='/renamegif' ";
+      html += "onsubmit=\"return confirm('Renomear este GIF?');\" ";
+      html += "style='margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center'>";
+      html += "<input type='hidden' name='oldname' value='" + htmlEscape(nome) + "'>";
+      html += "<input type='text' name='newname' value='" + htmlEscape(nomeTela) + "' ";
+      html += "style='flex:1;min-width:130px;background:#222;color:#eee;border:1px solid #444;border-radius:6px;padding:8px'>";
+      html += "<button type='submit' style='background:#008cff;color:white;border:0;border-radius:6px;padding:8px 12px;cursor:pointer'>";
+      html += "Renomear";
+      html += "</button>";
+      html += "</form>";
+
       html += "<form method='POST' action='/deletegif' ";
       html += "onsubmit=\"return confirm('Apagar este GIF do SD?');\" ";
       html += "style='margin-top:10px'>";
@@ -4038,10 +4961,12 @@ void configurarRotasUploadGifs() {
     html += "<p>Status atual: " + htmlEscape(gifUploadStatusMsg) + "</p>";
     html += "<p>Arquivo: " + htmlEscape(gifUploadNomeArquivo) + "</p>";
     html += "<hr>";
+    html += montarHtmlMascoteGifs();
+
+    html += "<hr>";
     html += "<h3>GIFs no SD</h3>";
     html += montarHtmlListaGifs();
     html += "<br><p><a style='color:#6cf' href='/listar'>Atualizar lista</a></p>";
-    html += "</body></html>";
 
     otaServer.send(200, "text/html", html);
   });
@@ -4053,9 +4978,10 @@ void configurarRotasUploadGifs() {
     html += "<title>GIFs no SD</title>";
     html += "</head><body style='font-family:Arial;background:#111;color:#eee;padding:20px'>";
     html += "<h2>GIFs no SD</h2>";
+    html += montarHtmlMascoteGifs();
+    html += "<hr>";
     html += montarHtmlListaGifs();
     html += "<p><a style='color:#6cf' href='/'>Voltar</a></p>";
-    html += "</body></html>";
 
     otaServer.send(200, "text/html", html);
   });
@@ -4146,6 +5072,82 @@ void configurarRotasUploadGifs() {
     } else {
       otaServer.send(500, "text/plain", "Erro ao deletar GIF");
     }
+  });
+
+  otaServer.on("/renamegif", HTTP_POST, []() {
+    if (!otaServer.hasArg("oldname") || !otaServer.hasArg("newname")) {
+      otaServer.send(400, "text/plain", "Parametros oldname/newname ausentes");
+      return;
+    }
+
+    String caminhoAntigo = otaServer.arg("oldname");
+    String caminhoNovo = otaServer.arg("newname");
+
+    caminhoAntigo = sanitizarNomeArquivoGif(caminhoAntigo);
+    caminhoNovo = sanitizarNomeArquivoGif(caminhoNovo);
+
+    if (!ehArquivoGifSeguro(caminhoAntigo) || !ehArquivoGifSeguro(caminhoNovo)) {
+      otaServer.send(400, "text/plain", "Nome de GIF invalido");
+      return;
+    }
+
+    if (caminhoAntigo == caminhoNovo) {
+      gifUploadStatusMsg = "Nome nao alterado";
+      gifUploadNomeArquivo = caminhoAntigo;
+
+      otaServer.sendHeader("Location", "/listar");
+      otaServer.send(303);
+      return;
+    }
+
+    if (!SD.begin(SD_CS)) {
+      otaServer.send(500, "text/plain", "SD nao iniciado");
+      return;
+    }
+
+    if (!SD.exists(caminhoAntigo)) {
+      otaServer.send(404, "text/plain", "GIF original nao encontrado");
+      return;
+    }
+
+    if (SD.exists(caminhoNovo)) {
+      otaServer.send(409, "text/plain", "Ja existe um GIF com esse nome");
+      return;
+    }
+
+    bool eraGifAbertura = false;
+
+    String antigoSemBarra = caminhoAntigo;
+    if (antigoSemBarra.startsWith("/")) {
+      antigoSemBarra = antigoSemBarra.substring(1);
+    }
+
+    if (gifAbertura == caminhoAntigo || gifAbertura == antigoSemBarra) {
+      eraGifAbertura = true;
+    }
+
+    bool renomeou = SD.rename(caminhoAntigo, caminhoNovo);
+
+    if (!renomeou) {
+      otaServer.send(500, "text/plain", "Erro ao renomear GIF");
+      return;
+    }
+
+    gifUploadStatusMsg = "GIF renomeado";
+    gifUploadNomeArquivo = caminhoNovo;
+
+    if (eraGifAbertura) {
+      String novoSemBarra = caminhoNovo;
+      if (novoSemBarra.startsWith("/")) {
+        novoSemBarra = novoSemBarra.substring(1);
+      }
+
+      gifAbertura = novoSemBarra;
+      salvarConfiguracoes();
+    }
+
+    otaServer.sendHeader("Location", "/listar");
+    otaServer.send(303);
   });
 
   otaServer.on("/uploadgif", HTTP_POST,
@@ -4258,6 +5260,133 @@ void configurarRotasUploadGifs() {
       }
     }
   );
+
+  otaServer.on("/uploadmascotegif", HTTP_POST,
+  []() {
+    bool ok = !gifUploadErro && gifUploadNomeArquivo.length() > 0;
+
+    otaServer.sendHeader("Connection", "close");
+
+    String resposta = ok
+      ? "Upload do mascote concluido: " + gifUploadNomeArquivo
+      : "Falha no upload do GIF do mascote";
+
+      otaServer.sendHeader("Location", "/listar");
+      otaServer.send(303);
+
+    if (ok) {
+      gifUploadStatusMsg = "Mascote atualizado";
+      gifUploadPercent = 100;
+    } else {
+      gifUploadStatusMsg = "Erro no mascote";
+    }
+  },
+  []() {
+    HTTPUpload& upload = otaServer.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+      gifUploadEmAndamento = true;
+      gifUploadPercent = 0;
+      gifUploadStatusMsg = "Iniciando mascote";
+      gifUploadErro = false;
+      gifUploadNomeArquivo = "";
+
+      if (!otaServer.hasArg("humor")) {
+        gifUploadStatusMsg = "Humor ausente";
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+        return;
+      }
+
+      String humor = otaServer.arg("humor");
+      String caminho = obterCaminhoGifMascotePorHumor(humor);
+
+      if (caminho.length() == 0) {
+        gifUploadStatusMsg = "Humor invalido";
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+        return;
+      }
+
+      if (!garantirPastaMascote()) {
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+        return;
+      }
+
+      if (!ehArquivoGifSeguro(caminho)) {
+        gifUploadStatusMsg = "Caminho invalido";
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+        return;
+      }
+
+      if (SD.exists(caminho)) {
+        SD.remove(caminho);
+      }
+
+      gifUploadNomeArquivo = caminho;
+      gifUploadFile = SD.open(caminho, FILE_WRITE);
+
+      if (!gifUploadFile) {
+        gifUploadStatusMsg = "Erro criando mascote";
+        gifUploadEmAndamento = false;
+        gifUploadErro = true;
+        gifUploadNomeArquivo = "";
+        return;
+      }
+    }
+
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+      if (!gifUploadFile) {
+        gifUploadStatusMsg = "Arquivo invalido";
+        gifUploadErro = true;
+        return;
+      }
+
+      size_t escrito = gifUploadFile.write(upload.buf, upload.currentSize);
+
+      if (escrito != upload.currentSize) {
+        gifUploadStatusMsg = "Erro gravando SD";
+        gifUploadErro = true;
+      } else {
+        gifUploadStatusMsg = "Gravando mascote";
+        gifUploadPercent = 50;
+      }
+    }
+
+    else if (upload.status == UPLOAD_FILE_END) {
+      if (gifUploadFile) {
+        gifUploadFile.close();
+      }
+
+      gifUploadEmAndamento = false;
+
+      if (!gifUploadErro) {
+        gifUploadPercent = 100;
+        gifUploadStatusMsg = "Mascote salvo";
+      } else {
+        gifUploadPercent = 0;
+        gifUploadStatusMsg = "Erro no mascote";
+      }
+    }
+
+    else if (upload.status == UPLOAD_FILE_ABORTED) {
+      if (gifUploadFile) {
+        gifUploadFile.close();
+      }
+
+      if (gifUploadNomeArquivo.length() > 0 && SD.exists(gifUploadNomeArquivo)) {
+        SD.remove(gifUploadNomeArquivo);
+      }
+
+      gifUploadPercent = 0;
+      gifUploadStatusMsg = "Upload mascote cancelado";
+      gifUploadEmAndamento = false;
+      gifUploadErro = true;
+    }
+  }
+);
 }
 
 void iniciarUploadGifs() {
@@ -4299,6 +5428,50 @@ void loopUploadGifs() {
 // ======================================================
 // OUTRAS FUNCOES
 // ======================================================
+
+void prepararEscalaGifArea(String nomeArquivo, int areaX, int areaY, int areaW, int areaH) {
+  gifOrigW = areaW;
+  gifOrigH = areaH;
+  gifDrawW = areaW;
+  gifDrawH = areaH;
+  gifOffsetX = areaX;
+  gifOffsetY = areaY;
+  gifEscalarParaTela = true;
+
+  uint16_t largura = 0;
+  uint16_t altura = 0;
+
+  if (!obterDimensaoGif(nomeArquivo, largura, altura)) {
+    return;
+  }
+
+  if (largura == 0 || altura == 0) {
+    return;
+  }
+
+  gifOrigW = largura;
+  gifOrigH = altura;
+
+  float escalaX = (float)areaW / (float)largura;
+  float escalaY = (float)areaH / (float)altura;
+  float escala = escalaX < escalaY ? escalaX : escalaY;
+
+  gifDrawW = (uint16_t)((float)largura * escala);
+  gifDrawH = (uint16_t)((float)altura * escala);
+
+  if (gifDrawW < 1) gifDrawW = 1;
+  if (gifDrawH < 1) gifDrawH = 1;
+  if (gifDrawW > areaW) gifDrawW = areaW;
+  if (gifDrawH > areaH) gifDrawH = areaH;
+
+  gifOffsetX = areaX + ((areaW - gifDrawW) / 2);
+  gifOffsetY = areaY + ((areaH - gifDrawH) / 2);
+
+  // Forca usar GIFDrawComEscala, mesmo quando o GIF ja cabe.
+  // Assim conseguimos desenhar dentro da area do mascote, e nao no canto 0,0.
+  gifEscalarParaTela = true;
+}
+
 void telaUploadGifs() {
   static bool iniciado = false;
   static String ultimoStatus = "";
@@ -4394,61 +5567,69 @@ void telaUploadGifs() {
 
 void telaStatusBME() {
   static bool iniciado = false;
-  static float ultimaTemperatura = -9999;
-  static float ultimaUmidade = -9999;
-  static float ultimaPressao = -9999;
-  static float ultimaAltitude = -9999;
+  static int ultimaTemperatura10 = -999999;
+  static int ultimaUmidade10 = -999999;
+  static int ultimaPressao10 = -999999;
+  static int ultimaAltitude10 = -999999;
 
   float temperatura = bme.readTemperature();
   float umidade = bme.readHumidity();
   float pressao = bme.readPressure() / 100.0F;
   float altitude = bme.readAltitude(1013.25);
 
-  if (!iniciado) {
+  int temperatura10 = (int)round(temperatura * 10.0f);
+  int umidade10 = (int)round(umidade * 10.0f);
+  int pressao10 = (int)round(pressao * 10.0f);
+  int altitude10 = (int)round(altitude * 10.0f);
+
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("BME280");
     desenharRodapeSensor();
 
-    iniciado = true;
-    ultimaTemperatura = -9999;
-    ultimaUmidade = -9999;
-    ultimaPressao = -9999;
-    ultimaAltitude = -9999;
-  }
-
-  if (
-    temperatura != ultimaTemperatura ||
-    umidade != ultimaUmidade ||
-    pressao != ultimaPressao ||
-    altitude != ultimaAltitude
-  ) {
-    tft.fillRect(0, 50, 280, 175, ST77XX_BLACK);
-
     tft.setTextWrap(false);
-
-    // Temperatura
     tft.setTextSize(2);
+
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.setCursor(25, 60);
     tft.print("TEMP:");
 
-    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    tft.setCursor(130, 60);
-    tft.printf("%.1f C", temperatura);
-
-    // Umidade
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.setCursor(25, 95);
     tft.print("UMID:");
 
-    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(130, 95);
-    tft.printf("%.1f %%", umidade);
-
-    // Pressao
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.setCursor(25, 130);
     tft.print("PRESS:");
 
+    tft.setCursor(25, 165);
+    tft.print("ALT:");
+
+    iniciado = true;
+    ultimaTemperatura10 = -999999;
+    ultimaUmidade10 = -999999;
+    ultimaPressao10 = -999999;
+    ultimaAltitude10 = -999999;
+  }
+
+  if (temperatura10 != ultimaTemperatura10) {
+    tft.fillRect(125, 58, 140, 24, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(130, 60);
+    tft.printf("%.1f C", temperatura);
+    ultimaTemperatura10 = temperatura10;
+  }
+
+  if (umidade10 != ultimaUmidade10) {
+    tft.fillRect(125, 93, 140, 24, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(130, 95);
+    tft.printf("%.1f %%", umidade);
+    ultimaUmidade10 = umidade10;
+  }
+
+  if (pressao10 != ultimaPressao10) {
+    tft.fillRect(125, 128, 140, 24, ST77XX_BLACK);
+    tft.setTextSize(2);
     tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
     tft.setCursor(130, 130);
     tft.printf("%.1f", pressao);
@@ -4457,29 +5638,27 @@ void telaStatusBME() {
     tft.setCursor(220, 136);
     tft.print("hPa");
 
-    // Altitude
-    tft.setTextSize(2);
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 165);
-    tft.print("ALT:");
+    ultimaPressao10 = pressao10;
+  }
 
+  if (altitude10 != ultimaAltitude10) {
+    tft.fillRect(125, 163, 140, 24, ST77XX_BLACK);
+    tft.setTextSize(2);
     tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
     tft.setCursor(130, 165);
     tft.printf("%.1f m", altitude);
-
-    ultimaTemperatura = temperatura;
-    ultimaUmidade = umidade;
-    ultimaPressao = pressao;
-    ultimaAltitude = altitude;
+    ultimaAltitude10 = altitude10;
   }
 
   if (cliqueDetectado) {
     cliqueDetectado = false;
+
     iniciado = false;
-    ultimaTemperatura = -9999;
-    ultimaUmidade = -9999;
-    ultimaPressao = -9999;
-    ultimaAltitude = -9999;
+    ultimaTemperatura10 = -999999;
+    ultimaUmidade10 = -999999;
+    ultimaPressao10 = -999999;
+    ultimaAltitude10 = -999999;
+
     estadoUI = MENU_UI;
     tft.fillScreen(ST77XX_BLACK);
     desenharMenu();
@@ -4489,129 +5668,152 @@ void telaStatusBME() {
 
 void telaStatusMPU() {
   static bool iniciado = false;
-  static float ultimoAx = -9999;
-  static float ultimoAy = -9999;
-  static float ultimoAz = -9999;
-  static float ultimoGx = -9999;
-  static float ultimoGy = -9999;
-  static float ultimoGz = -9999;
-  static float ultimaTemp = -9999;
+
+  static int ultimoAx100 = -999999;
+  static int ultimoAy100 = -999999;
+  static int ultimoAz100 = -999999;
+  static int ultimoGx100 = -999999;
+  static int ultimoGy100 = -999999;
+  static int ultimoGz100 = -999999;
+  static int ultimaTemp10 = -999999;
 
   sensors_event_t a, g, t;
   mpu.getEvent(&a, &g, &t);
 
-  if (!iniciado) {
+  int ax100 = (int)round(a.acceleration.x * 100.0f);
+  int ay100 = (int)round(a.acceleration.y * 100.0f);
+  int az100 = (int)round(a.acceleration.z * 100.0f);
+
+  int gx100 = (int)round(g.gyro.x * 100.0f);
+  int gy100 = (int)round(g.gyro.y * 100.0f);
+  int gz100 = (int)round(g.gyro.z * 100.0f);
+
+  int temp10 = (int)round(t.temperature * 10.0f);
+
+  if (!iniciado || forcarRedesenhoTela) {
     desenharTituloTelaSensor("MPU6050");
     desenharRodapeSensor();
 
-    iniciado = true;
-    ultimoAx = -9999;
-    ultimoAy = -9999;
-    ultimoAz = -9999;
-    ultimoGx = -9999;
-    ultimoGy = -9999;
-    ultimoGz = -9999;
-    ultimaTemp = -9999;
-  }
-
-  if (
-    a.acceleration.x != ultimoAx ||
-    a.acceleration.y != ultimoAy ||
-    a.acceleration.z != ultimoAz ||
-    g.gyro.x != ultimoGx ||
-    g.gyro.y != ultimoGy ||
-    g.gyro.z != ultimoGz ||
-    t.temperature != ultimaTemp
-  ) {
-    tft.fillRect(0, 50, 280, 175, ST77XX_BLACK);
-
     tft.setTextWrap(false);
 
-    // Acelerometro
     tft.setTextSize(1);
     tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-    tft.setCursor(20, 55);
+    tft.setCursor(15, 48);
     tft.print("ACELEROMETRO m/s2");
 
-    tft.setTextSize(2);
-
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 75);
-    tft.print("X:");
     tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    tft.setCursor(60, 75);
-    tft.printf("%.2f", a.acceleration.x);
-
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(145, 75);
-    tft.print("Y:");
-    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    tft.setCursor(180, 75);
-    tft.printf("%.2f", a.acceleration.y);
-
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 103);
-    tft.print("Z:");
-    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-    tft.setCursor(60, 103);
-    tft.printf("%.2f", a.acceleration.z);
-
-    // Giroscopio
-    tft.setTextSize(1);
-    tft.setTextColor(ST77XX_MAGENTA, ST77XX_BLACK);
-    tft.setCursor(20, 133);
+    tft.setCursor(15, 128);
     tft.print("GIROSCOPIO rad/s");
 
     tft.setTextSize(2);
-
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 153);
+
+    tft.setCursor(20, 65);
     tft.print("X:");
-    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    tft.setCursor(60, 153);
-    tft.printf("%.2f", g.gyro.x);
-
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(145, 153);
+    tft.setCursor(20, 90);
     tft.print("Y:");
-    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    tft.setCursor(180, 153);
-    tft.printf("%.2f", g.gyro.y);
-
-    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(25, 181);
+    tft.setCursor(20, 115);
     tft.print("Z:");
-    tft.setTextColor(ST77XX_GREEN, ST77XX_BLACK);
-    tft.setCursor(60, 181);
-    tft.printf("%.2f", g.gyro.z);
 
-    // Temperatura interna
+    tft.setCursor(20, 145);
+    tft.print("X:");
+    tft.setCursor(20, 170);
+    tft.print("Y:");
+    tft.setCursor(20, 195);
+    tft.print("Z:");
+
+    tft.setTextSize(1);
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-    tft.setCursor(145, 181);
-    tft.print("T:");
-    tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
-    tft.setCursor(180, 181);
-    tft.printf("%.1fC", t.temperature);
+    tft.setCursor(175, 218);
+    tft.print("TEMP:");
 
-    ultimoAx = a.acceleration.x;
-    ultimoAy = a.acceleration.y;
-    ultimoAz = a.acceleration.z;
-    ultimoGx = g.gyro.x;
-    ultimoGy = g.gyro.y;
-    ultimoGz = g.gyro.z;
-    ultimaTemp = t.temperature;
+    iniciado = true;
+
+    ultimoAx100 = -999999;
+    ultimoAy100 = -999999;
+    ultimoAz100 = -999999;
+    ultimoGx100 = -999999;
+    ultimoGy100 = -999999;
+    ultimoGz100 = -999999;
+    ultimaTemp10 = -999999;
+  }
+
+  if (ax100 != ultimoAx100) {
+    tft.fillRect(55, 63, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(55, 65);
+    tft.printf("%.2f", a.acceleration.x);
+    ultimoAx100 = ax100;
+  }
+
+  if (ay100 != ultimoAy100) {
+    tft.fillRect(55, 88, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(55, 90);
+    tft.printf("%.2f", a.acceleration.y);
+    ultimoAy100 = ay100;
+  }
+
+  if (az100 != ultimoAz100) {
+    tft.fillRect(55, 113, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+    tft.setCursor(55, 115);
+    tft.printf("%.2f", a.acceleration.z);
+    ultimoAz100 = az100;
+  }
+
+  if (gx100 != ultimoGx100) {
+    tft.fillRect(55, 143, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(55, 145);
+    tft.printf("%.2f", g.gyro.x);
+    ultimoGx100 = gx100;
+  }
+
+  if (gy100 != ultimoGy100) {
+    tft.fillRect(55, 168, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(55, 170);
+    tft.printf("%.2f", g.gyro.y);
+    ultimoGy100 = gy100;
+  }
+
+  if (gz100 != ultimoGz100) {
+    tft.fillRect(55, 193, 115, 22, ST77XX_BLACK);
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.setCursor(55, 195);
+    tft.printf("%.2f", g.gyro.z);
+    ultimoGz100 = gz100;
+  }
+
+  if (temp10 != ultimaTemp10) {
+    tft.fillRect(215, 216, 60, 12, ST77XX_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+    tft.setCursor(215, 218);
+    tft.printf("%.1f C", t.temperature);
+    ultimaTemp10 = temp10;
   }
 
   if (cliqueDetectado) {
     cliqueDetectado = false;
+
     iniciado = false;
-    ultimoAx = -9999;
-    ultimoAy = -9999;
-    ultimoAz = -9999;
-    ultimoGx = -9999;
-    ultimoGy = -9999;
-    ultimoGz = -9999;
-    ultimaTemp = -9999;
+
+    ultimoAx100 = -999999;
+    ultimoAy100 = -999999;
+    ultimoAz100 = -999999;
+    ultimoGx100 = -999999;
+    ultimoGy100 = -999999;
+    ultimoGz100 = -999999;
+    ultimaTemp10 = -999999;
+
     estadoUI = MENU_UI;
     tft.fillScreen(ST77XX_BLACK);
     desenharMenu();
@@ -4996,6 +6198,8 @@ void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* 
   }
 }
 
+
+
 void ajustarBacklight() {
   if (estadoUI == TELA_UI && telaAtiva == TELA_AJUSTE_BRILHO) return;
 
@@ -5022,3 +6226,431 @@ void beep(int freq) {
     ledcWriteTone(PIN_BUZZER, 0);
   }
 }
+
+// FUNCOES MASCOTE
+
+void atualizarEstadoMascote() {
+  ecuConectada = (millis() - ultimaMensagemALDL < ALDL_TIMEOUT_CONECTADA_MS);
+
+  if (!aldlPrimeiroFrameOk || !aldlTemFrameValido || pacotesRecebidos <= 0) {
+    estadoMascoteAtual = MASCOTE_DORMINDO;
+  }
+  else if (!ecuConectada) {
+    estadoMascoteAtual = MASCOTE_TRISTE;
+  }
+  else if (tempMotor >= alertaTempMotorLimite) {
+    estadoMascoteAtual = MASCOTE_QUENTE;
+  }
+  else if (voltagem > 0 && voltagem <= alertaTensaoMinima) {
+    estadoMascoteAtual = MASCOTE_DOENTE;
+  }
+  else if (valorRPM >= alertaShiftLightRPM) {
+    estadoMascoteAtual = MASCOTE_ASSUSTADO;
+  }
+  else if (velocidade > 0) {
+    estadoMascoteAtual = MASCOTE_ANDANDO;
+  }
+  else {
+    estadoMascoteAtual = MASCOTE_FELIZ;
+  }
+}
+
+const char* obterNomeEstadoMascote() {
+  switch (estadoMascoteAtual) {
+    case MASCOTE_DORMINDO:  return "DORMINDO";
+    case MASCOTE_FELIZ:     return "FELIZ";
+    case MASCOTE_ANDANDO:   return "ANDANDO";
+    case MASCOTE_ASSUSTADO: return "ASSUSTADO";
+    case MASCOTE_TRISTE:    return "TRISTE";
+    case MASCOTE_DOENTE:    return "DOENTE";
+    case MASCOTE_QUENTE:    return "QUENTE";
+    default:                return "---";
+  }
+}
+
+const char* obterFalaMascote() {
+  switch (estadoMascoteAtual) {
+    case MASCOTE_DORMINDO:  return "ZzZ... esperando a ECU";
+    case MASCOTE_FELIZ:     return "Tudo certo no Monza!";
+    case MASCOTE_ANDANDO:   return "Vrum vrum!";
+    case MASCOTE_ASSUSTADO: return "EITA RPM!";
+    case MASCOTE_TRISTE:    return "Cade a ECU?";
+    case MASCOTE_DOENTE:    return "Bateria fraca :(";
+    case MASCOTE_QUENTE:    return "To fritando!";
+    default:                return "...";
+  }
+}
+
+String obterGifMascoteAtual() {
+  switch (estadoMascoteAtual) {
+    case MASCOTE_DORMINDO:  return "/mascote/dormindo.gif";
+    case MASCOTE_FELIZ:     return "/mascote/feliz.gif";
+    case MASCOTE_ANDANDO:   return "/mascote/andando.gif";
+    case MASCOTE_ASSUSTADO: return "/mascote/assustado.gif";
+    case MASCOTE_TRISTE:    return "/mascote/triste.gif";
+    case MASCOTE_DOENTE:    return "/mascote/doente.gif";
+    case MASCOTE_QUENTE:    return "/mascote/quente.gif";
+    default:                return "/mascote/feliz.gif";
+  }
+}
+
+void telaMascote() {
+  static bool iniciado = false;
+  static EstadoMascote ultimoEstadoDesenhado = MASCOTE_DORMINDO;
+  static int ultimoRPM = -1;
+  static int ultimaTemp10 = -9999;
+  static int ultimaBat10 = -9999;
+  static int ultimaVel = -1;
+  static String ultimaFala = "";
+  static String ultimoGif = "";
+
+  atualizarEstadoMascote();
+
+  int temp10 = (int)round(tempMotor * 10.0f);
+  int bat10 = (int)round(voltagem * 10.0f);
+
+  String gifAtual = obterGifMascoteAtual();
+  bool mudouEstado = estadoMascoteAtual != ultimoEstadoDesenhado;
+  bool mudouGif = gifAtual != ultimoGif;
+
+  if (!iniciado || forcarRedesenhoTela || mudouEstado || mudouGif) {
+    tft.fillScreen(ST77XX_BLACK);
+    tft.setTextWrap(false);
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    tft.getTextBounds("MONZAGOTCHI", 0, 0, &x1, &y1, &w, &h);
+    tft.setCursor((280 - w) / 2, 10);
+    tft.print("MONZAGOTCHI");
+
+    tft.drawFastHLine(25, 33, 230, ST77XX_GREY);
+
+    // Area do GIF
+    uint16_t corBorda = ST77XX_CYAN;
+
+    if (estadoMascoteAtual == MASCOTE_QUENTE) {
+      corBorda = ST77XX_RED;
+    } else if (estadoMascoteAtual == MASCOTE_DOENTE) {
+      corBorda = ST77XX_ORANGE;
+    } else if (estadoMascoteAtual == MASCOTE_ASSUSTADO) {
+      corBorda = ST77XX_YELLOW;
+    } else if (estadoMascoteAtual == MASCOTE_TRISTE) {
+      corBorda = ST77XX_MAGENTA;
+    } else if (estadoMascoteAtual == MASCOTE_ANDANDO) {
+      corBorda = ST77XX_GREEN;
+    }
+
+    tft.drawRoundRect(MASCOTE_GIF_X, MASCOTE_GIF_Y, MASCOTE_GIF_W, MASCOTE_GIF_H, 10, corBorda);
+
+    // Balao de fala
+    tft.drawRoundRect(15, 180, 250, 35, 8, ST77XX_WHITE);
+
+    // Rodape
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(55, 240);
+    tft.print("Clique para voltar");
+
+    fecharGifMascote();
+
+    if (!abrirGifMascote(gifAtual)) {
+      desenharPlaceholderMascote(obterNomeEstadoMascote());
+    }
+
+    ultimoEstadoDesenhado = estadoMascoteAtual;
+    ultimoGif = gifAtual;
+    ultimoRPM = -1;
+    ultimaTemp10 = -9999;
+    ultimaBat10 = -9999;
+    ultimaVel = -1;
+    ultimaFala = "";
+    iniciado = true;
+  }
+
+  // Mantem o GIF animando
+  if (mascoteGifAberto) {
+    tocarFrameGifMascote();
+  }
+
+  String falaAtual = String(obterFalaMascote());
+
+  if (ultimaFala != falaAtual || mudouEstado || forcarRedesenhoTela) {
+    tft.fillRect(20, 185, 240, 24, ST77XX_BLACK);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+
+    int16_t x1, y1;
+    uint16_t w, h;
+
+    const char* fala = obterFalaMascote();
+    tft.getTextBounds(fala, 0, 0, &x1, &y1, &w, &h);
+
+    int falaX = (280 - w) / 2;
+    if (falaX < 22) falaX = 22;
+
+    tft.setCursor(falaX, 194);
+    tft.print(fala);
+
+    ultimaFala = falaAtual;
+  }
+
+  if (ultimoRPM != valorRPM || ultimaTemp10 != temp10 || ultimaBat10 != bat10 || ultimaVel != velocidade) {
+    tft.fillRect(0, 218, 280, 15, ST77XX_BLACK);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(10, 222);
+    tft.printf("RPM:%d  T:%.1fC  B:%.1fV  V:%d", valorRPM, tempMotor, voltagem, velocidade);
+
+    ultimoRPM = valorRPM;
+    ultimaTemp10 = temp10;
+    ultimaBat10 = bat10;
+    ultimaVel = velocidade;
+  }
+
+  if (cliqueDetectado) {
+    cliqueDetectado = false;
+
+    fecharGifMascote();
+
+    iniciado = false;
+    ultimoEstadoDesenhado = MASCOTE_DORMINDO;
+    ultimoGif = "";
+    ultimaFala = "";
+
+    estadoUI = MENU_UI;
+    tft.fillScreen(ST77XX_BLACK);
+    desenharMenu();
+    beep(freqClique);
+  }
+}
+
+bool garantirPastaMascote() {
+  if (!SD.begin(SD_CS)) {
+    gifUploadStatusMsg = "SD nao iniciado";
+    return false;
+  }
+
+  if (!SD.exists(MASCOTE_DIR)) {
+    if (!SD.mkdir(MASCOTE_DIR)) {
+      gifUploadStatusMsg = "Erro criando /mascote";
+      return false;
+    }
+  }
+
+  return true;
+}
+
+String obterCaminhoGifMascotePorHumor(String humor) {
+  humor.trim();
+  humor.toLowerCase();
+
+  if (humor == "dormindo")  return "/mascote/dormindo.gif";
+  if (humor == "feliz")     return "/mascote/feliz.gif";
+  if (humor == "andando")   return "/mascote/andando.gif";
+  if (humor == "assustado") return "/mascote/assustado.gif";
+  if (humor == "triste")    return "/mascote/triste.gif";
+  if (humor == "doente")    return "/mascote/doente.gif";
+  if (humor == "quente")    return "/mascote/quente.gif";
+
+  return "";
+}
+
+String obterNomeHumorMascote(String humor) {
+  humor.trim();
+  humor.toLowerCase();
+
+  if (humor == "dormindo")  return "Dormindo";
+  if (humor == "feliz")     return "Feliz";
+  if (humor == "andando")   return "Andando";
+  if (humor == "assustado") return "Assustado";
+  if (humor == "triste")    return "Triste";
+  if (humor == "doente")    return "Doente";
+  if (humor == "quente")    return "Quente";
+
+  return "Desconhecido";
+}
+
+String montarHtmlMascoteGifs() {
+  String html = "";
+
+  const char* humores[] = {
+    "dormindo",
+    "feliz",
+    "andando",
+    "assustado",
+    "triste",
+    "doente",
+    "quente"
+  };
+
+  html += "<h3>GIFs do Mascote</h3>";
+  html += "<p style='color:#ccc'>Envie um GIF separado para cada humor do Monzagotchi.</p>";
+
+  html += "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px'>";
+
+  for (int i = 0; i < 7; i++) {
+    String humor = String(humores[i]);
+    String nomeHumor = obterNomeHumorMascote(humor);
+    String caminho = obterCaminhoGifMascotePorHumor(humor);
+
+    bool existe = SD.exists(caminho);
+
+    uint16_t largura = 0;
+    uint16_t altura = 0;
+    bool temDimensao = false;
+    uint32_t tamanho = 0;
+
+    if (existe) {
+      File f = SD.open(caminho, FILE_READ);
+      if (f) {
+        tamanho = f.size();
+        f.close();
+      }
+
+      temDimensao = obterDimensaoGif(caminho, largura, altura);
+    }
+
+    html += "<div style='background:#1b1b1b;border:1px solid #333;border-radius:10px;padding:12px'>";
+    html += "<div style='font-weight:bold;margin-bottom:8px;color:#fff'>";
+    html += htmlEscape(nomeHumor);
+    html += "</div>";
+
+    html += "<div style='background:#000;border-radius:8px;padding:8px;text-align:center;margin-bottom:8px;min-height:120px'>";
+
+    if (existe) {
+      html += "<img src='/gif?name=" + urlEncode(caminho) + "' ";
+      html += "style='max-width:180px;max-height:120px;width:auto;height:auto;border:1px solid #444'>";
+    } else {
+      html += "<div style='color:#777;padding-top:45px'>Nenhum GIF</div>";
+    }
+
+    html += "</div>";
+
+    html += "<div style='font-size:13px;color:#ccc;margin-bottom:8px'>";
+    html += "Arquivo: <code>" + htmlEscape(caminho) + "</code><br>";
+
+    if (existe) {
+      html += "Tamanho: " + String(tamanho) + " bytes<br>";
+
+      if (temDimensao) {
+        html += "Dimensao: " + String(largura) + " x " + String(altura) + " px<br>";
+      }
+    } else {
+      html += "<span style='color:#ffcc00'>Ainda nao enviado</span><br>";
+    }
+
+    html += "</div>";
+
+    html += "<form method='POST' action='/uploadmascotegif?humor=" + humor + "' enctype='multipart/form-data' ";
+    html += "style='margin-top:10px'>";
+    html += "<input type='file' name='gif' accept='.gif,image/gif' style='max-width:100%;color:#eee'><br><br>";
+    html += "<button type='submit' style='background:#008cff;color:white;border:0;border-radius:6px;padding:8px 12px;cursor:pointer'>";
+    html += existe ? "Substituir GIF" : "Enviar GIF";
+    html += "</button>";
+    html += "</form>";
+
+    html += "</div>";
+  }
+
+  html += "</div>";
+
+  return html;
+}
+
+void fecharGifMascote() {
+  if (mascoteGifAberto) {
+    gif.close();
+  }
+
+  mascoteGifAberto = false;
+  mascoteGifExiste = false;
+  mascoteGifAtual = "";
+}
+
+bool abrirGifMascote(String caminho) {
+  fecharGifMascote();
+
+  if (!caminho.startsWith("/")) {
+    caminho = "/" + caminho;
+  }
+
+  if (!ehArquivoGifSeguro(caminho)) {
+    mascoteGifExiste = false;
+    mascoteGifAtual = caminho;
+    return false;
+  }
+
+  if (!SD.exists(caminho)) {
+    mascoteGifExiste = false;
+    mascoteGifAtual = caminho;
+    return false;
+  }
+
+  prepararEscalaGifArea(caminho, MASCOTE_GIF_X + 4, MASCOTE_GIF_Y + 4, MASCOTE_GIF_W - 8, MASCOTE_GIF_H - 8);
+
+  tft.fillRect(MASCOTE_GIF_X + 4, MASCOTE_GIF_Y + 4, MASCOTE_GIF_W - 8, MASCOTE_GIF_H - 8, ST77XX_BLACK);
+
+  if (!gif.open(caminho.c_str(), GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
+    mascoteGifAberto = false;
+    mascoteGifExiste = false;
+    mascoteGifAtual = caminho;
+    return false;
+  }
+
+  mascoteGifAberto = true;
+  mascoteGifExiste = true;
+  mascoteGifAtual = caminho;
+  mascoteEstadoGifAberto = estadoMascoteAtual;
+
+  return true;
+}
+
+void tocarFrameGifMascote() {
+  if (!mascoteGifAberto) {
+    return;
+  }
+
+  // false = nao bloqueia esperando o tempo interno do GIF
+  bool ok = gif.playFrame(false, NULL);
+
+  // Quando terminar o GIF, reabre para fazer loop
+  if (!ok) {
+    String caminho = mascoteGifAtual;
+
+    fecharGifMascote();
+
+    if (caminho.length() > 0 && SD.exists(caminho)) {
+      abrirGifMascote(caminho);
+    }
+  }
+}
+
+void desenharPlaceholderMascote(const char* texto) {
+  tft.fillRect(MASCOTE_GIF_X + 4, MASCOTE_GIF_Y + 4, MASCOTE_GIF_W - 8, MASCOTE_GIF_H - 8, ST77XX_BLACK);
+
+  tft.setTextWrap(false);
+  tft.setTextSize(2);
+  tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+
+  tft.getTextBounds(texto, 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, MASCOTE_GIF_Y + 52);
+  tft.print(texto);
+
+  tft.setTextSize(1);
+  tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+
+  const char* aviso = "GIF nao enviado";
+  tft.getTextBounds(aviso, 0, 0, &x1, &y1, &w, &h);
+  tft.setCursor((280 - w) / 2, MASCOTE_GIF_Y + 78);
+  tft.print(aviso);
+}
+
