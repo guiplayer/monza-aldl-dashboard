@@ -40,6 +40,118 @@ O projeto foi desenvolvido para monitorar dados da ECU Multec 700 via ALDL 8192 
 
 ---
 
+## 🖼️ Galeria do projeto
+
+Imagens reais do painel, dashboards e montagem do projeto.
+
+### Dashboard / interface
+
+![Dashboard principal](imgs/dash.jpeg)
+
+![Dashboard 2](imgs/dash2.jpeg)
+
+![Dashboard 3](imgs/dash3.jpeg)
+
+![Dashboard 4](imgs/dash4.jpeg)
+
+![Dashboard 5](imgs/dash5.jpeg)
+
+![Dashboard 6](imgs/dash6.jpeg)
+
+![Dashboard 7](imgs/dash7.jpeg)
+
+![Dashboard 8](imgs/dash8.jpeg)
+
+### GIFs usados no projeto
+
+Os GIFs utilizados no projeto ficam na pasta:
+
+```txt
+/gifs/
+```
+
+Arquivos adicionados no repositório:
+
+```txt
+gifs/abertura.gif
+gifs/camera.gif
+```
+
+Exemplo de uso:
+
+- `abertura.gif`: GIF de abertura do painel
+- `camera.gif`: GIF adicional para testes/animações
+
+### Vídeo de exemplo
+
+Um vídeo demonstrativo também foi adicionado na pasta `imgs`:
+
+```txt
+imgs/example.mp4
+```
+
+> O vídeo pode ser usado para demonstrar o painel funcionando, menus, dashboards ou animações.
+
+---
+
+## 🧱 Arquivos 3D para impressão
+
+O repositório também possui arquivos STL para impressão 3D da caixa e da frente do projeto.
+
+Arquivos adicionados:
+
+```txt
+stl/ALDLMonza_BOX.STL
+stl/ALDLMonza_Front.STL
+```
+
+### Peças
+
+| Arquivo | Descrição |
+|---|---|
+| `ALDLMonza_BOX.STL` | Caixa/base do projeto |
+| `ALDLMonza_Front.STL` | Frente/moldura do display |
+
+Essas peças podem ser impressas em 3D para montar o painel físico com o ESP32, display ST7789, encoder e demais módulos.
+
+### Sugestões de impressão
+
+- Material: PLA, PETG ou ABS
+- Altura de camada: 0.16 mm a 0.28 mm
+- Infill: 20% a 40% para uso normal
+- Infill maior pode ser usado em suportes ou regiões que precisem de mais resistência
+- Conferir a orientação da peça no fatiador antes de imprimir
+- Verificar folgas do display, encoder e conectores antes da montagem final
+
+---
+
+## 📁 Estrutura de arquivos de mídia e impressão
+
+Arquivos de mídia e modelos 3D disponíveis no repositório:
+
+```txt
+/
+├── gifs/
+│   ├── abertura.gif
+│   └── camera.gif
+├── imgs/
+│   ├── dash.jpeg
+│   ├── dash2.jpeg
+│   ├── dash3.jpeg
+│   ├── dash4.jpeg
+│   ├── dash5.jpeg
+│   ├── dash6.jpeg
+│   ├── dash7.jpeg
+│   ├── dash8.jpeg
+│   └── example.mp4
+└── stl/
+    ├── ALDLMonza_BOX.STL
+    └── ALDLMonza_Front.STL
+```
+
+
+---
+
 ## 🖥️ Display
 
 O projeto usa um display TFT ST7789 SPI.
@@ -615,6 +727,8 @@ Exemplos de dados salvos:
 
 ## 📁 Estrutura sugerida do cartão SD
 
+Estrutura usada no cartão SD instalado no painel:
+
 ```txt
 /
 ├── config.json
@@ -630,6 +744,28 @@ Exemplos de dados salvos:
     ├── triste.gif
     ├── doente.gif
     └── quente.gif
+```
+
+Estrutura dos arquivos versionados no GitHub:
+
+```txt
+/
+├── gifs/
+│   ├── abertura.gif
+│   └── camera.gif
+├── imgs/
+│   ├── dash.jpeg
+│   ├── dash2.jpeg
+│   ├── dash3.jpeg
+│   ├── dash4.jpeg
+│   ├── dash5.jpeg
+│   ├── dash6.jpeg
+│   ├── dash7.jpeg
+│   ├── dash8.jpeg
+│   └── example.mp4
+└── stl/
+    ├── ALDLMonza_BOX.STL
+    └── ALDLMonza_Front.STL
 ```
 
 ---
