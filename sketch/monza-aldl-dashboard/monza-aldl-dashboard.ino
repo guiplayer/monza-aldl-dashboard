@@ -193,6 +193,7 @@ uint8_t ultimoID2 = 0x00;
 int brilhoDia = 255;
 int brilhoNoite = 255;
 String gifAbertura = "abertura.gif";
+unsigned long gifAberturaTempoMaxMs = 6000;
 int freqEncoder = 1200;
 int freqClique = 2000;
 int freqSucesso = 2500;
@@ -458,6 +459,7 @@ void desenharLinhaAlertaValor(int y, const char* nome, float valor, const char* 
 void dashboardGForce();
 void atualizarGForce();
 void calibrarGForce();
+float normalizarZeroGForce(float valor);
 void telaLogsSD();
 void loopLogsSD();
 void iniciarSessaoLogSD();
@@ -1673,6 +1675,11 @@ void atualizarGForce() {
     (gLongitudinal * gLongitudinal) +
     (gVertical * gVertical)
   );
+
+  gLateral = normalizarZeroGForce(gLateral);
+  gLongitudinal = normalizarZeroGForce(gLongitudinal);
+  gVertical = normalizarZeroGForce(gVertical);
+  gTotal = normalizarZeroGForce(gTotal);
 }
 
 void dashboardGForce() {
@@ -1694,6 +1701,14 @@ void dashboardGForce() {
   desenharCardDash(145, 55, 120, 75, "LONG G", vLong, "acel/freio", ST77XX_YELLOW);
   desenharCardDash(15, 145, 120, 75, "VERT G", vVert, "impacto", ST77XX_ORANGE);
   desenharCardDash(145, 145, 120, 75, "TOTAL G", vTotal, "resultante", ST77XX_GREEN);
+}
+
+float normalizarZeroGForce(float valor) {
+  if (valor > -0.01f && valor < 0.01f) {
+    return 0.0f;
+  }
+
+  return valor;
 }
 
 void ajustarHora() {
@@ -3063,61 +3078,217 @@ void telaSelecaoGif() {
   static bool lido = false;
   static std::vector<String> arquivosGif;
   static int selGif = 0;
+  static int opcao = 0;
+  static bool editandoTempo = false;
+  static bool precisaRedesenhar = true;
+
+  const int totalOpcoesExtras = 2; // Tempo + Voltar
 
   if (!lido) {
     arquivosGif.clear();
+
     File raiz = SD.open("/");
     File arquivo = raiz.openNextFile();
+
     while (arquivo) {
       String nome = arquivo.name();
-      if (nome.endsWith(".gif") || nome.endsWith(".GIF")) {
+      String nomeLower = nome;
+      nomeLower.toLowerCase();
+
+      if (!arquivo.isDirectory() && nomeLower.endsWith(".gif")) {
         arquivosGif.push_back(nome);
       }
+
+      arquivo.close();
       arquivo = raiz.openNextFile();
     }
+
+    raiz.close();
+
     lido = true;
+    selGif = 0;
+    opcao = 0;
+    editandoTempo = false;
+    precisaRedesenhar = true;
+
     tft.fillScreen(ST77XX_BLACK);
   }
 
-  tft.setTextSize(2);
-  tft.setCursor(45, 20);
-  tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
-  tft.print("ESCOLHER ABERTURA");
-  tft.drawFastHLine(40, 42, 200, ST77XX_GREY);
+  int totalGifs = arquivosGif.size();
+  int totalOpcoes = totalGifs + totalOpcoesExtras;
 
-  if (arquivosGif.size() == 0) {
-    tft.setCursor(50, 100);
-    tft.print("NENHUM .GIF NO SD");
-  } else {
-    if (movimentoEncoder != 0) {
-      selGif = (selGif + movimentoEncoder + arquivosGif.size()) % arquivosGif.size();
-      movimentoEncoder = 0;
-    }
+  if (totalOpcoes <= 0) {
+    totalOpcoes = 1;
+  }
 
-    for (int i = 0; i < (int)arquivosGif.size(); i++) {
-      int yPos = 70 + (i * 30);
-      if (i == selGif) {
-        tft.setTextColor(ST77XX_CYAN, ST77XX_BLACK);
-        tft.setCursor(40, yPos); tft.print("> ");
-      } else {
-        tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-        tft.setCursor(40, yPos); tft.print("  ");
+  if (movimentoEncoder != 0) {
+    if (editandoTempo) {
+      long novoTempo = (long)gifAberturaTempoMaxMs + (movimentoEncoder * 1000L);
+
+      if (novoTempo < 1000) novoTempo = 1000;
+      if (novoTempo > 30000) novoTempo = 30000;
+
+      gifAberturaTempoMaxMs = (unsigned long)novoTempo;
+    } else {
+      opcao += movimentoEncoder;
+
+      if (opcao < 0) opcao = totalOpcoes - 1;
+      if (opcao >= totalOpcoes) opcao = 0;
+
+      if (opcao < totalGifs) {
+        selGif = opcao;
       }
-      tft.print(arquivosGif[i]);
     }
+
+    movimentoEncoder = 0;
+    precisaRedesenhar = true;
+    beep(freqEncoder);
   }
 
   if (cliqueDetectado) {
-    if (arquivosGif.size() > 0) {
-      gifAbertura = arquivosGif[selGif];
+    cliqueDetectado = false;
+
+    if (opcao < totalGifs && totalGifs > 0) {
+      gifAbertura = arquivosGif[opcao];
       salvarConfiguracoes();
       beep(freqSucesso);
+      precisaRedesenhar = true;
     }
-    lido = false;
-    estadoUI = MENU_UI;
+    else if (opcao == totalGifs) {
+      editandoTempo = !editandoTempo;
+
+      if (!editandoTempo) {
+        salvarConfiguracoes();
+        beep(freqSucesso);
+      } else {
+        beep(freqClique);
+      }
+
+      precisaRedesenhar = true;
+    }
+    else {
+      salvarConfiguracoes();
+
+      lido = false;
+      editandoTempo = false;
+      precisaRedesenhar = true;
+
+      estadoUI = MENU_UI;
+      tft.fillScreen(ST77XX_BLACK);
+      desenharMenu();
+      beep(freqClique);
+      return;
+    }
+  }
+
+  if (precisaRedesenhar || forcarRedesenhoTela) {
     tft.fillScreen(ST77XX_BLACK);
-    desenharMenu();
-    cliqueDetectado = false;
+
+    tft.setTextSize(2);
+    tft.setCursor(45, 15);
+    tft.setTextColor(ST77XX_YELLOW, ST77XX_BLACK);
+    tft.print("GIF ABERTURA");
+    tft.drawFastHLine(40, 38, 200, ST77XX_GREY);
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_GREY, ST77XX_BLACK);
+    tft.setCursor(15, 240);
+    tft.print("Gire: navega/ajusta | Clique: seleciona");
+
+    int y = 55;
+    int maxItensGifVisiveis = 5;
+
+    int inicioLista = 0;
+    if (opcao >= maxItensGifVisiveis) {
+      inicioLista = opcao - maxItensGifVisiveis + 1;
+    }
+
+    if (inicioLista > totalGifs - maxItensGifVisiveis) {
+      inicioLista = max(0, totalGifs - maxItensGifVisiveis);
+    }
+
+    if (totalGifs == 0) {
+      tft.setTextSize(2);
+      tft.setTextColor(ST77XX_RED, ST77XX_BLACK);
+      tft.setCursor(35, 75);
+      tft.print("NENHUM GIF");
+    } else {
+      for (int i = 0; i < maxItensGifVisiveis; i++) {
+        int idx = inicioLista + i;
+        if (idx >= totalGifs) break;
+
+        bool selecionado = opcao == idx;
+        bool atual = gifAbertura == arquivosGif[idx] || gifAbertura == ("/" + arquivosGif[idx]);
+
+        uint16_t corFundo = selecionado ? ST77XX_BLUE : ST77XX_BLACK;
+
+        if (selecionado) {
+          tft.fillRoundRect(8, y - 4, 264, 23, 5, corFundo);
+        }
+
+        tft.setTextSize(1);
+        tft.setTextColor(atual ? ST77XX_GREEN : ST77XX_WHITE, corFundo);
+        tft.setCursor(18, y + 3);
+
+        String nomeTela = arquivosGif[idx];
+        if (nomeTela.startsWith("/")) {
+          nomeTela = nomeTela.substring(1);
+        }
+
+        if (nomeTela.length() > 28) {
+          nomeTela = nomeTela.substring(0, 25) + "...";
+        }
+
+        tft.print(nomeTela);
+
+        if (atual) {
+          tft.setTextColor(ST77XX_GREEN, corFundo);
+          tft.setCursor(225, y + 3);
+          tft.print("ATUAL");
+        }
+
+        y += 25;
+      }
+    }
+
+    int yTempo = 185;
+    bool selecionadoTempo = opcao == totalGifs;
+    uint16_t corFundoTempo = selecionadoTempo ? ST77XX_BLUE : ST77XX_BLACK;
+
+    if (selecionadoTempo) {
+      tft.fillRoundRect(8, yTempo - 4, 264, 24, 5, corFundoTempo);
+    }
+
+    tft.setTextSize(1);
+    tft.setTextColor(ST77XX_WHITE, corFundoTempo);
+    tft.setCursor(18, yTempo + 3);
+    tft.print("Tempo max:");
+
+    tft.setTextColor(editandoTempo ? ST77XX_ORANGE : ST77XX_CYAN, corFundoTempo);
+    tft.setCursor(125, yTempo + 3);
+    tft.print(gifAberturaTempoMaxMs / 1000);
+    tft.print(" s");
+
+    if (editandoTempo) {
+      tft.setTextColor(ST77XX_ORANGE, ST77XX_BLACK);
+      tft.setCursor(175, yTempo + 3);
+      tft.print("EDITANDO");
+    }
+
+    int yVoltar = 212;
+    bool selecionadoVoltar = opcao == totalGifs + 1;
+    uint16_t corFundoVoltar = selecionadoVoltar ? ST77XX_BLUE : ST77XX_BLACK;
+
+    if (selecionadoVoltar) {
+      tft.fillRoundRect(8, yVoltar - 4, 264, 24, 5, corFundoVoltar);
+    }
+
+    tft.setTextSize(2);
+    tft.setTextColor(ST77XX_WHITE, corFundoVoltar);
+    tft.setCursor(18, yVoltar);
+    tft.print("Voltar");
+
+    precisaRedesenhar = false;
   }
 }
 
@@ -3135,6 +3306,7 @@ void salvarConfiguracoes() {
   doc["brilhoDia"] = brilhoDia;
   doc["brilhoNoite"] = brilhoNoite;
   doc["gif"] = gifAbertura;
+  doc["gifAberturaTempoMaxMs"] = gifAberturaTempoMaxMs;
   doc["fEnc"] = freqEncoder;
   doc["fCli"] = freqClique;
   doc["fSuc"] = freqSucesso;
@@ -3192,6 +3364,7 @@ void carregarConfiguracoes() {
     brilhoDia = doc["brilhoDia"] | 255;
     brilhoNoite = doc["brilhoNoite"] | 80;
     gifAbertura = doc["gif"] | "abertura.gif";
+    gifAberturaTempoMaxMs = doc["gifAberturaTempoMaxMs"] | 6000;
     freqEncoder = doc["fEnc"] | 1200;
     freqClique  = doc["fCli"] | 2000;
     freqSucesso = doc["fSuc"] | 2500;
@@ -3240,6 +3413,9 @@ void carregarConfiguracoes() {
 
   if (aldlUiUpdateMs < 50) aldlUiUpdateMs = 50;
   if (aldlUiUpdateMs > 2000) aldlUiUpdateMs = 2000;
+  
+  if (gifAberturaTempoMaxMs < 1000) gifAberturaTempoMaxMs = 1000;
+  if (gifAberturaTempoMaxMs > 30000) gifAberturaTempoMaxMs = 30000;
 
   file.close();
 }
@@ -4025,8 +4201,9 @@ void GIFDrawComEscala(GIFDRAW *pDraw) {
 }
 
 void rodarGifAbertura(String nomeArquivo) {
-  if (!nomeArquivo.startsWith("/"))
+  if (!nomeArquivo.startsWith("/")) {
     nomeArquivo = "/" + nomeArquivo;
+  }
 
   if (!SD.exists(nomeArquivo)) {
     return;
@@ -4036,23 +4213,33 @@ void rodarGifAbertura(String nomeArquivo) {
 
   tft.fillScreen(ST77XX_BLACK);
 
-  if (!gif.open(nomeArquivo.c_str(), GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
-    return;
-  }
-
   unsigned long inicio = millis();
 
-  while (gif.playFrame(true, NULL)) {
-    yield();
-
-    if (digitalRead(ENC_SW) == LOW)
+  while (millis() - inicio < gifAberturaTempoMaxMs) {
+    if (digitalRead(ENC_SW) == LOW) {
       break;
+    }
 
-    if (millis() - inicio > 6000)
+    if (!gif.open(nomeArquivo.c_str(), GIFOpenFile, GIFCloseFile, GIFReadFile, GIFSeekFile, GIFDraw)) {
       break;
+    }
+
+    while (gif.playFrame(true, NULL)) {
+      yield();
+
+      if (digitalRead(ENC_SW) == LOW) {
+        gif.close();
+        return;
+      }
+
+      if (millis() - inicio >= gifAberturaTempoMaxMs) {
+        gif.close();
+        return;
+      }
+    }
+
+    gif.close();
   }
-
-  gif.close();
 }
 
 void telaConfigBuzzer() {
