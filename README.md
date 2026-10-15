@@ -37,6 +37,32 @@ O projeto foi desenvolvido para monitorar dados da ECU Multec 700 via ALDL 8192 
 - Limpeza automática de logs antigos
 - Tela G-Force usando MPU6050
 - Mascote / Monzagotchi com humor baseado nos dados do carro
+- App Android para ver os dados no celular via Wi-Fi
+
+---
+
+## 📱 App Android (Wi-Fi)
+
+O painel pode enviar os dados ALDL em tempo real para o celular pelo app em [`app/`](app/).
+
+### Como usar
+
+1. No painel, abra `Configuracao > App Celular` e deixe **Wi-Fi para o app** em ON (é o padrão).
+2. No celular, conecte na rede `MonzaDash-OTA` (senha `12345678`). Se o Android avisar que a rede não tem internet, escolha **manter conectado**.
+3. Abra o app **Monza ALDL** e toque em **Conectar**.
+
+Com o app conectado, a ECU é lida em qualquer tela do painel (inclusive no menu). A leitura só pausa durante o Update OTA e o Upload de GIFs. O mesmo Wi-Fi é usado para o OTA e o upload de GIFs.
+
+### O que o app mostra
+
+- **Painel**: RPM com gráfico dos últimos 30 s, temperatura do motor, bateria, velocidade, TPS, MAP, IAT, avanço, AFR desejado, injeção, IAC, CO2, ventoinha e tempo de motor
+- Alertas de temperatura, bateria e shift light usando os mesmos limites configurados no painel
+- **Códigos**: falhas ativas da ECU e botão para limpar erros
+- **Status**: ECU online, pacotes, erros de checksum, ECU ID e módulo
+
+### Instalar o APK
+
+O APK é gerado pelo GitHub Actions junto com o firmware ao criar uma tag `v*`, e fica anexado no Release. Para compilar localmente, veja [`app/README.md`](app/README.md).
 
 ---
 
@@ -820,3 +846,4 @@ Funcionalidades já implementadas:
 - G-Force
 - Alertas
 - Configurações persistentes no SD
+- App Android via Wi-Fi
