@@ -93,6 +93,7 @@
 #define TELA_TEMPO_MOTOR      35
 #define TELA_LOGS_SD          36
 #define TELA_MASCOTE          37
+#define TELA_APP_CELULAR      38
 
 // =======================
 // OBJETOS
@@ -131,6 +132,23 @@ int gifUploadPercent = 0;
 File gifUploadFile;
 
 // =======================
+// APP CELULAR (WI-FI)
+// =======================
+static const uint16_t APP_TCP_PORTA = 3333;
+static const int APP_MAX_CLIENTES_TCP = 2;
+static const unsigned long APP_INTERVALO_ENVIO_MS = 200;
+
+bool appWifiAtivo = true;          // salvo no config.json
+bool apLigado = false;             // AP compartilhado entre app, OTA e upload de GIFs
+bool appWifiServidorAtivo = false;
+unsigned long appUltimoEnvio = 0;
+
+WiFiServer appTcpServer(APP_TCP_PORTA);
+WiFiClient appTcpClientes[APP_MAX_CLIENTES_TCP];
+char appTcpBuffer[APP_MAX_CLIENTES_TCP][32];
+size_t appTcpBufferLen[APP_MAX_CLIENTES_TCP] = {0};
+
+// =======================
 // SEUS MENUS (MANTIDOS ORIGINAIS)
 // =======================
 struct Menu {
@@ -143,12 +161,12 @@ struct Menu {
 const char* menuPrincipalItens[] = {"Dashboard","Sensores","Diagnostico","Mascote","Configuracao"};
 const char* submenuSensores[] = {"RPM","TPS","MAP","CTS Temp Motor","IAT Temp Adm","VBAT","Velocidade","IAC Steps","Tempo Injecao","CO2 POT","SPK Avanco","AFR Desejado","FAN","VMOTOR","Tempo Motor","Voltar"};
 const char* submenuDiagnostico[] = {"Status ALDL","Codigos ECU","Limpar erros ECU","Status MPU","Status BME","Status I2C","Status Iluminacao","SD Card","Teste Buzzer","Teste Display","Voltar"};
-const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Tempos UI","Logs SD","Update via OTA","Upload Gifs","Voltar"};
+const char* submenuConfig[] = {"Data e hora","GIF abertura","Alertas","Brilho tela","Dash default","Buzzer","Tempos UI","Logs SD","Update via OTA","Upload Gifs","App Celular","Voltar"};
 
 Menu menuPrincipal = { "Menu Principal", menuPrincipalItens, 5, nullptr };
 Menu menuSensores = { "Sensores", submenuSensores, 16, &menuPrincipal };
 Menu menuDiagnostico = { "Diagnostico", submenuDiagnostico, 11, &menuPrincipal };
-Menu menuConfig = { "Configuracao", submenuConfig, 11, &menuPrincipal };
+Menu menuConfig = { "Configuracao", submenuConfig, 12, &menuPrincipal };
 
 Menu* menuAtual = &menuPrincipal;
 int menuIndex = 0;
@@ -532,6 +550,18 @@ void loopOTA();
 void configurarRotasOTA();
 void pararServidorWebAP();
 
+// APP CELULAR
+bool garantirAP();
+void desligarAPSeOcioso();
+void iniciarWifiApp();
+void pararWifiApp();
+void aplicarConfigAppCelular();
+int contarClientesWifiApp();
+bool appClienteConectado();
+void loopAppCelular();
+void telaAppCelular();
+void enviarLimparErrosECU();
+
 // TELAS
 bool telaEhSensorALDL(int tela);
 void desenharTituloTelaSensor(const char* titulo);
@@ -595,6 +625,8 @@ void setup() {
 
   ajustarBacklight();
 
+  aplicarConfigAppCelular();
+
   beep(freqSucesso);
   if (dashInicialDefault >= 0 && dashInicialDefault < totalDashboards) {
     dashAtual = dashInicialDefault;
@@ -611,7 +643,12 @@ void setup() {
 // LOOP PRINCIPAL
 // =======================
 void loop() {
-  if (estadoUI == TELA_UI && telaEhSensorALDL(telaAtiva)) {
+  bool telaUsaALDL = estadoUI == TELA_UI && telaEhSensorALDL(telaAtiva);
+  bool telaTransferencia = estadoUI == TELA_UI && (telaAtiva == TELA_OTA || telaAtiva == TELA_UPLOAD_GIFS);
+
+  // Com o app conectado a ECU continua sendo lida em qualquer tela,
+  // exceto durante OTA / upload de GIFs.
+  if (telaUsaALDL || (appClienteConectado() && !telaTransferencia)) {
     if (!aldlAtivo) {
       iniciarALDL();
     }
@@ -637,6 +674,8 @@ void loop() {
   if (estadoUI == TELA_UI && telaAtiva == TELA_UPLOAD_GIFS) {
     loopUploadGifs();
   }
+
+  loopAppCelular();
 
   ajustarBacklight();
   lerEncoder();
@@ -901,6 +940,7 @@ void lerEncoder() {
       telaAtiva != TELA_UPLOAD_GIFS &&
       telaAtiva != TELA_TEMPOS_UI &&
       telaAtiva != TELA_LOGS_SD &&
+      telaAtiva != TELA_APP_CELULAR &&
       telaAtiva != TELA_DASH_DEFAULT) {
 
       estadoUI = MENU_UI;
@@ -1012,6 +1052,7 @@ void selecionarItemMenu() {
     else if (menuIndex == 7) { telaAtiva = TELA_LOGS_SD; estadoUI = TELA_UI; }
     else if (menuIndex == 8) { telaAtiva = TELA_OTA; estadoUI = TELA_UI; }
     else if (menuIndex == 9) { telaAtiva = TELA_UPLOAD_GIFS; estadoUI = TELA_UI; }
+    else if (menuIndex == 10) { telaAtiva = TELA_APP_CELULAR; estadoUI = TELA_UI; }
   }
 
   if (estadoUI == MENU_UI) {
@@ -1074,6 +1115,7 @@ void atualizarTela() {
     case TELA_TEMPOS_UI: telaTemposUI(); break;
     case TELA_LOGS_SD: telaLogsSD(); break;
     case TELA_MASCOTE: telaMascote(); break;
+    case TELA_APP_CELULAR: telaAppCelular(); break;
   }
 }
 
@@ -3345,6 +3387,8 @@ void salvarConfiguracoes() {
   doc["logVMotor"] = logVMotor;
   doc["logTempoMotor"] = logTempoMotor;
 
+  doc["appWifiAtivo"] = appWifiAtivo;
+
   serializeJsonPretty(doc, file);
   file.flush();
   file.close();
@@ -3401,6 +3445,8 @@ void carregarConfiguracoes() {
     logFan = doc["logFan"] | true;
     logVMotor = doc["logVMotor"] | true;
     logTempoMotor = doc["logTempoMotor"] | true;
+
+    appWifiAtivo = doc["appWifiAtivo"] | true;
   }
   if (dashInicialDefault < -1) dashInicialDefault = -1;
   if (dashInicialDefault >= totalDashboards) dashInicialDefault = -1;
@@ -4806,12 +4852,10 @@ void configurarRotasOTA() {
 void iniciarOTA() {
   pararServidorWebAP();
 
-  WiFi.mode(WIFI_AP);
-  bool ok = WiFi.softAP(otaSSID.c_str(), otaSenha.c_str());
+  bool ok = garantirAP();
 
   if (ok) {
-    IPAddress ip = WiFi.softAPIP();
-    otaIP = ip.toString();
+    otaIP = WiFi.softAPIP().toString();
     otaStatusMsg = "AP iniciado";
     otaPercent = 0;
 
@@ -4831,8 +4875,6 @@ void pararServidorWebAP() {
   }
 
   otaServer.stop();
-  WiFi.softAPdisconnect(true);
-  WiFi.mode(WIFI_OFF);
 
   otaAtivo = false;
   gifUploadAtivo = false;
@@ -4849,6 +4891,10 @@ void pararServidorWebAP() {
   gifUploadPercent = 0;
 
   otaIP = "";
+
+  // Mantem o AP no ar se o app celular estiver usando
+  desligarAPSeOcioso();
+  if (apLigado) otaIP = WiFi.softAPIP().toString();
 }
 
 void pararOTA() {
@@ -5579,12 +5625,10 @@ void configurarRotasUploadGifs() {
 void iniciarUploadGifs() {
   pararServidorWebAP();
 
-  WiFi.mode(WIFI_AP);
-  bool ok = WiFi.softAP(otaSSID.c_str(), otaSenha.c_str());
+  bool ok = garantirAP();
 
   if (ok) {
-    IPAddress ip = WiFi.softAPIP();
-    otaIP = ip.toString();
+    otaIP = WiFi.softAPIP().toString();
 
     gifUploadStatusMsg = "AP iniciado";
     gifUploadNomeArquivo = "";

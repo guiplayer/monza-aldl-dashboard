@@ -61,3 +61,50 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: monza-aldl-dashboard-${{ github.ref_name }}.bin
+
+  build-apk:
+    name: Build app Android
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Instalar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Testes
+        run: |
+          flutter pub get
+          flutter test
+
+      - name: Compilar APK
+        run: flutter build apk --release
+
+      - name: Renomear APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk ../monza-aldl-app-${{ github.ref_name }}.apk
+
+      - name: Publicar artefato do build
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-android
+          path: monza-aldl-app-${{ github.ref_name }}.apk
+
+      - name: Anexar APK no GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: monza-aldl-app-${{ github.ref_name }}.apk
